@@ -394,11 +394,12 @@ enum SettingsItem: String, CaseIterable, Identifiable {
     case .clipboardImageUsage: Self.row(.clipboard, "图片当前占用")
     case .clipboardLens:
       Self.row(
-        .clipboard, "显示透镜", LocalizedStringResource("search.clipboard.lens", defaultValue: "透镜,预览"),
+        .clipboard, "显示卡片预览",
+        LocalizedStringResource("search.clipboard.lens", defaultValue: "透镜,预览,卡片"),
         keys: [Prefs.clipboardShowPreview], place: .advanced)
     case .clipboardImageRows:
       Self.row(
-        .clipboard, "列表里直接显示图片",
+        .clipboard, "卡片里直接显示图片",
         LocalizedStringResource("search.clipboard.imageRows", defaultValue: "图片,缩略图,预览,大图"),
         keys: [Prefs.clipboardImageRows], place: .advanced)
     case .clipboardLinkPreview:
@@ -415,12 +416,12 @@ enum SettingsItem: String, CaseIterable, Identifiable {
       Self.row(
         .clipboard, "面板位置",
         LocalizedStringResource(
-          "search.clipboard.panelPosition", defaultValue: "位置,跟随鼠标,上次位置,屏幕上方"),
+          "search.clipboard.panelPosition", defaultValue: "位置,跟随鼠标,上次位置,屏幕上方,屏幕底部"),
         keys: [Prefs.clipboardPanelPosition], place: .advanced)
     case .clipboardPanelSize:
       Self.row(
         .clipboard, "面板大小",
-        LocalizedStringResource("search.clipboard.panelSize", defaultValue: "宽度,行数"),
+        LocalizedStringResource("search.clipboard.panelSize", defaultValue: "宽度,行数,高度,卡片"),
         place: .advanced)
     case .clipboardPastePlain:
       Self.row(
@@ -458,12 +459,13 @@ enum SettingsItem: String, CaseIterable, Identifiable {
     case .launcherPanelPosition:
       Self.row(
         .launcher, "面板位置",
-        LocalizedStringResource("search.launcher.panelPosition", defaultValue: "位置,跟随鼠标,上次位置,屏幕上方"),
+        LocalizedStringResource(
+          "search.launcher.panelPosition", defaultValue: "位置,跟随鼠标,上次位置,屏幕上方,屏幕底部"),
         keys: [Prefs.launcherPanelPosition], place: .advanced)
     case .launcherPanelSize:
       Self.row(
         .launcher, "面板大小",
-        LocalizedStringResource("search.launcher.panelSize", defaultValue: "宽度,行数"),
+        LocalizedStringResource("search.launcher.panelSize", defaultValue: "宽度,行数,高度,卡片"),
         place: .advanced)
     case .launcherKeys:
       Self.row(

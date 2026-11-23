@@ -105,7 +105,7 @@ enum Prefs {
   /// 单击条目直接粘贴（设置 › 剪贴板「面板」，默认关 = 单击选中、双击粘贴）；⌘ 单击、⇧ 单击不看它，照常多选
   static let clipboardPasteOnClick = "clipboardPasteOnClick"
   /// 剪贴板面板出现在哪（设置 › 剪贴板「面板」，2026-11-04 用户要求和翻译浮窗一致）：top 鼠标所在屏的上方正中（默认）/
-  /// mouse 光标右下（放不下翻到另一侧）/ last 上次拖到的地方（没拖过 = 屏幕上方）。启动器同一套（launcherPanelPosition）
+  /// bottom 停靠底部（默认）/ top 屏幕上方 / mouse 光标旁 / last 上次位置。启动器没有 bottom。
   static let clipboardPanelPosition = "clipboardPanelPosition"
 
   /// 源语言：没设 = 自动检测。只在翻译浮窗顶部切换，全局记住
@@ -707,7 +707,7 @@ enum Prefs {
       clipboardImageRows: true,
       clipboardLinkPreview: true,
       clipboardPasteOnClick: false,
-      clipboardPanelPosition: "top",
+      clipboardPanelPosition: "bottom",
       launcherPanelPosition: "top",
       translateFirst: Lang.zhHans.rawValue,
       translateSecond: Lang.en.rawValue,

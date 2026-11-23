@@ -1,6 +1,6 @@
 // ClipboardStore / ImageStore 单测：去重置顶、各项上限只动普通历史、清空、落库往返、图片编码、旧库迁移、
 // 收藏夹（归进去就是收藏、删了留在收藏、拖动排序）、撤销栈（连撤、收起时提交、再复制拿回来）、取消收藏后超期的提示与保护；
-// 剪贴板面板（Lens Bar）的纯逻辑：高度与透镜预留、列表前缀和、筛选标签与 Tab / ⇧Tab / ⌫ / Esc、粘贴动词与写进剪贴板的内容、
+// 剪贴板卡片面板：稳定高度、方向键、筛选标签与 Tab / ⇧Tab / ⌫ / Esc、粘贴动词与写进剪贴板的内容、
 // ⌘C 后收起才置顶。
 // 用内存库 + 临时目录，不碰真实数据。
 
@@ -574,70 +574,47 @@ struct ClipboardStoreTests {
     }
   }
 
-  // MARK: 面板（Lens Bar）
+  // MARK: 卡片面板
 
-  @Test func panelHeightReservesLensAndCaps() throws {
-    #expect(ClipboardPanelView.listHeight(rowsHeight: 0, sections: 0, reservesLens: true) == 140)
-    // 上下内缩 12 + 分组标题 24 + 两行 80（+ 透镜预留 158）
-    #expect(ClipboardPanelView.listHeight(rowsHeight: 80, sections: 1, reservesLens: true) == 274)
-    #expect(ClipboardPanelView.listHeight(rowsHeight: 80, sections: 1, reservesLens: false) == 116)
-    #expect(
-      ClipboardPanelView.listHeight(rowsHeight: 2000, sections: 3, reservesLens: true) == 427.5)
-    // 各行的高：图片行开着时图片 64，其余 40；「新建片段」40
-    let rows = [text("a"), ClipItem(kind: .image), text("b")]
-    #expect(ClipboardPanelView.rowsHeight(rows, newSnippet: false, imageRows: true) == 144)
-    #expect(ClipboardPanelView.rowsHeight(rows, newSnippet: true, imageRows: false) == 160)
+  @Test func panelHeightStaysStableAndFitsEditors() throws {
     let (store, _) = try makeStore()
-    for index in 0..<3 { store.record(text("条目 \(index)", ago: Double(10 - index))) }
     let model = ClipboardPanelModel(store: store)
-    let height = ClipboardPanelView.height(
-      for: model, showsLens: true, banner: false, imageRows: true)
-    #expect(height == 406.5)  // 56 + 0.5 + (12 + 24 + 120 + 158) + 36
-    // ↑↓ 换选中不改窗口高度（透镜预留是常数）
-    model.select(store.items[2])
-    #expect(ClipboardPanelView.height(for: model, showsLens: true, banner: false) == height)
-    // 浮起的菜单要放得下 8.5 行、对话框给满
+    let baseline = ClipboardPanelView.height(for: model, banner: false, maxRows: 0)
+    #expect(baseline == 324.5)
+    for index in 0..<100 { store.record(text("条目 \(index)")) }
+    model.select(store.items[50])
+    #expect(ClipboardPanelView.height(for: model, banner: false, maxRows: 0) == baseline)
+    model.query = "没有匹配"
+    #expect(model.visibleItems.isEmpty)
+    #expect(ClipboardPanelView.height(for: model, banner: false, maxRows: 0) == baseline)
     model.palette = .filters
-    #expect(ClipboardPanelView.height(for: model, showsLens: false, banner: false) == 356.5)
+    #expect(ClipboardPanelView.height(for: model, banner: false, maxRows: 0) >= baseline)
     model.palette = nil
     model.dialog = .newSnippet
-    #expect(ClipboardPanelView.height(for: model, showsLens: true, banner: true) == 550)
-    // 片段范围多一行「新建片段」，没有片段时也不是空态
+    #expect(ClipboardPanelView.height(for: model, banner: true, maxRows: 0) == 542.5)
     model.dialog = nil
-    model.scope = .snippets
-    #expect(ClipboardPanelView.height(for: model, showsLens: true, banner: false) == 144.5)
-    // 片段范围里搜索没有结果：不画「新建片段」，给「没有匹配的条目」空态（高 140）
-    model.query = "zzzz"
-    #expect(model.isFiltered && !model.showsNewSnippetRow(in: model.visibleItems))
-    #expect(ClipboardPanelView.height(for: model, showsLens: true, banner: false) == 232.5)
+    #expect(ClipboardPanelView.height(for: model, banner: false, maxRows: 0) == baseline)
   }
 
-  @Test func listLayoutPrefixSums() {
-    let (a, b, c) = (text("a"), text("b"), text("c"))
-    let sections: [ClipboardPanelView.DaySection] = [
-      (.now, "今天", [(0, a), (1, b)]), (.distantPast, "昨天", [(2, c)]),
-    ]
-    let layout = ListLayout(sections: sections, lens: (b.id, 198))
-    #expect(layout.offset(of: a.id) == 24)
-    #expect(layout.offset(of: b.id) == 64)
-    #expect(layout.offset(of: c.id) == 286)  // 24 + 40 + 198 + 24
-    #expect(layout.sectionTops == [0, 262])
-    #expect(layout.height(of: b.id) == 198 && layout.height(of: a.id) == 40)
-    // 片段范围第一行「新建片段」
-    let leading = ListLayout(leading: 40, sections: sections, lens: nil)
-    #expect(leading.offset(of: c.id) == 168)  // 40 + 24 + 80 + 24
-    #expect(leading.sectionTops == [40, 144])
-    // 图片行（列表里直接显示图片）：图片 64，展开 146；关掉时和别的行一样 40
-    let picture = ClipItem(kind: .image)
-    let mixed: [ClipboardPanelView.DaySection] = [(.now, "今天", [(0, a), (1, picture), (2, b)])]
-    let rows = ListLayout(sections: mixed, lens: (a.id, 70), imageRows: true)
-    #expect(rows.offset(of: picture.id) == 94 && rows.height(of: picture.id) == 64)
-    #expect(rows.offset(of: b.id) == 158)  // 24 + 70 + 64
-    #expect(Lens.height(for: picture, form: nil, imageRows: true) == 146)
-    let open = ListLayout(sections: mixed, lens: (picture.id, 146), imageRows: true)
-    #expect(open.offset(of: b.id) == 210 && open.height(of: picture.id) == 146)  // 24 + 40 + 146
-    let off = ListLayout(sections: mixed, lens: nil)
-    #expect(off.height(of: picture.id) == 40 && off.offset(of: b.id) == 104)
+  @Test func horizontalNavigationPreservesTextEditingAndMenus() throws {
+    let (store, _) = try makeStore()
+    for index in 0..<4 { store.record(text("条目 \(index)")) }
+    let model = ClipboardPanelModel(store: store)
+    let items = model.visibleItems
+    #expect(model.handleCommand(#selector(NSResponder.moveRight(_:))))
+    #expect(model.selectedItem?.id == items[1].id && model.palette == nil)
+    #expect(model.handleCommand(#selector(NSResponder.moveRightAndModifySelection(_:))))
+    #expect(model.multiSelection == Set([items[1].id, items[2].id]))
+    model.query = "条目"
+    #expect(!model.handleCommand(#selector(NSResponder.moveRight(_:))))
+    #expect(!model.handleCommand(#selector(NSResponder.moveLeftAndModifySelection(_:))))
+    model.palette = .actions
+    model.actionQuery = ""
+    #expect(model.handleCommand(#selector(NSResponder.moveLeft(_:))))
+    #expect(model.palette == nil)
+    model.query = ""
+    #expect(model.handleCommand(#selector(NSResponder.moveLeft(_:))))
+    #expect(model.selectedItem?.id == items.last?.id)
   }
 
   /// 剪贴板面板挂进屏外窗口（不弹面板、不抢键盘）；「显示透镜」等用临时偏好域，不读 Dev 版里手测时改过的设置
@@ -645,7 +622,7 @@ struct ClipboardStoreTests {
     window: NSWindow, close: () -> Void
   ) {
     let window = NSWindow(
-      contentRect: NSRect(x: -20000, y: -20000, width: ClipboardPanelView.width, height: 520),
+      contentRect: NSRect(x: -20000, y: -20000, width: ClipboardPanelView.width, height: 324.5),
       styleMask: [.borderless], backing: .buffered, defer: false)
     let suite = "kitty-lens-test-\(UUID().uuidString)"
     let prefs = try #require(UserDefaults(suiteName: suite))
@@ -661,37 +638,36 @@ struct ClipboardStoreTests {
     )
   }
 
-  /// 每行背景里的 HoverTracker 是一个和整行（含透镜）一样大的 NSView：拿它的 frame（窗口坐标，原点左下）当行实际画在哪
-  private func drawnRows(in view: NSView) -> [CGRect] {
-    (String(describing: type(of: view)) == "TrackingView"
-      ? [view.convert(view.bounds, to: nil)] : [])
-      + view.subviews.flatMap(drawnRows(in:))
+  private func collection(in view: NSView) -> NSCollectionView? {
+    if let collection = view as? NSCollectionView { return collection }
+    for child in view.subviews {
+      if let found = collection(in: child) { return found }
+    }
+    return nil
   }
 
-  /// 实际画出来的行里正好一行展开成选中项的透镜，⌘Y 的起点（cardFrame，窗口坐标、原点左上）就是这一行；返回这一行
-  @discardableResult
-  private func expectLens(
-    _ model: ClipboardPanelModel, in window: NSWindow, _ step: Comment
-  ) throws -> (item: ClipItem, row: CGRect, drawn: [CGRect]) {
+  /// 真正可见的选中卡片必须和空格预览的起点一致；只创建附近的卡片，不为整份历史创建视图。
+  private func expectCard(_ model: ClipboardPanelModel, in window: NSWindow, _ step: Comment) throws
+  {
     let view = try #require(window.contentView)
+    let list = try #require(collection(in: view))
     let item = try #require(model.selectedItem)
-    let lens = Lens.height(for: item, form: model.contentForm(of: item))
-    let drawn = drawnRows(in: view).sorted { $0.maxY > $1.maxY }
-    let expanded = drawn.filter { $0.height > ClipRowView.height + 1 }
-    #expect(expanded.count == 1 && abs(expanded[0].height - lens) < 0.5, step)
-    let row = try #require(expanded.first, step)
+    let index = try #require(model.visibleItems.firstIndex(where: { $0.id == item.id }))
+    let path = IndexPath(item: index, section: 0)
+    #expect(list.indexPathsForVisibleItems().contains(path), step)
+    #expect(list.visibleItems().count < 12, step)
+    let attributes = try #require(list.layoutAttributesForItem(at: path))
+    let visible = attributes.frame.intersection(list.visibleRect)
+    let rect = list.convert(visible, to: view)
     let card = try #require(model.cardFrame, step)
     #expect(card.id == item.id, step)
-    #expect(
-      abs(card.rect.minY - (view.bounds.height - row.maxY)) < 0.5
-        && abs(card.rect.height - lens) < 0.5, step)
-    return (item, row, drawn)
+    let top = view.isFlipped ? rect.minY : view.bounds.height - rect.maxY
+    #expect(abs(card.rect.minX - rect.minX) < 0.5 && abs(card.rect.minY - top) < 0.5, step)
+    #expect(abs(card.rect.height - rect.height) < 0.5, step)
   }
 
-  /// 选中行换了所在分组（搜索前后、昨天的条目再复制挪进「今天」）后照样按透镜高度展开、跟着选中走：
-  /// 透镜那一行离第一行的距离 = 前缀和里的差（高亮按前缀和画）。行的身份只有条目 id 时这里失败：旧行被原样搬过去、
-  /// 不再更新，透镜不展开，高亮盖住下面几行。昨天那条取昨天最后一秒，保留天数最短 1 天也不会被裁掉
-  @Test func lensFollowsRowsAcrossSections() throws {
+  /// 搜索、清空搜索和旧条目再次复制后，选中的卡片与预览起点仍然指向同一个条目。
+  @Test func cardsFollowItemsAcrossSections() async throws {
     let (store, _) = try makeStore()
     let sinceMidnight = Date.now.timeIntervalSince(Calendar.current.startOfDay(for: .now))
     store.record(text("昨天的一段文字", ago: sinceMidnight + 1))
@@ -701,39 +677,28 @@ struct ClipboardStoreTests {
     let model = ClipboardPanelModel(store: store)
     let (window, close) = try showPanel(model)
     defer { close() }
-    func check(_ step: Comment) throws {
-      let items = model.visibleItems
-      // 至少等 0.5 s 让透镜动画走完；删掉的行还在播退场就再等（最多 2 s），一直多出来的行（搬走没清掉的旧行）照样失败
-      for tick in 0..<25 {
-        RunLoop.main.run(until: .now.addingTimeInterval(0.1))
-        if tick >= 4, drawnRows(in: try #require(window.contentView)).count == items.count { break }
-      }
-      let (item, row, drawn) = try expectLens(model, in: window, step)
-      #expect(drawn.count == items.count, step)
-      let layout = ListLayout(
-        sections: ClipboardPanelView.daySections(items), lens: (item.id, row.height))
-      let offset = try #require(layout.offset(of: item.id)) - (layout.offset(of: items[0].id) ?? 0)
-      #expect(abs((drawn.first?.maxY ?? 0) - row.maxY - offset) < 0.5, step)
+    func check(_ step: Comment) async throws {
+      try await Task.sleep(for: .milliseconds(300))
+      try expectCard(model, in: window, step)
     }
     let down = { _ = model.handleCommand(#selector(NSResponder.moveDown(_:))) }
-    try check("没有搜索词")
+    try await check("没有搜索词")
     model.query = "kitty"
-    try check("搜索（只过滤，照样按天分组）")
+    try await check("搜索（只过滤，照样按天分组）")
     down()
-    try check("搜索结果里 ↓")
+    try await check("搜索结果里 ↓")
     model.query = ""
-    try check("清掉搜索词")
+    try await check("清掉搜索词")
     for _ in 0..<3 { down() }
     #expect(model.selectedItem?.text == "昨天的一段文字")
     store.record(text("昨天的一段文字"))
-    try check("昨天的条目再复制，挪进「今天」")
+    try await check("昨天的条目再复制，挪进「今天」")
     down()
-    try check("挪完再 ↓")
+    try await check("挪完再 ↓")
   }
 
-  /// ↓ 带着列表滚动时 ⌘Y 的起点照样是新的透镜：换下去的上报视图要是跟着选中动画淡出，滚动中它还会报旧 id，
-  /// 拿掉时再把新的清成 nil，放大卡就从整个面板长出来
-  @Test func lensOriginFollowsScrolling() throws {
+  /// 连续导航时，空格预览的起点跟着真正可见的卡片移动。
+  @Test func cardOriginFollowsScrolling() async throws {
     let (store, _) = try makeStore()
     for index in 0..<12 { store.record(text("第 \(index) 条", ago: Double(100 - index))) }
     let model = ClipboardPanelModel(store: store)
@@ -741,15 +706,13 @@ struct ClipboardStoreTests {
     defer { close() }
     for step in 1...10 {
       _ = model.handleCommand(#selector(NSResponder.moveDown(_:)))
-      for _ in 0..<6 { RunLoop.main.run(until: .now.addingTimeInterval(0.1)) }
-      try expectLens(model, in: window, "↓ 第 \(step) 下")
+      try await Task.sleep(for: .milliseconds(300))
+      try expectCard(model, in: window, "↓ 第 \(step) 下")
     }
   }
 
-  /// 条目多、一下跳得远（2026-10-03 用户报：数据多了高亮错位）：从第一条按 ↑ 绕到最后一条、再跳回中间，
-  /// 透镜照样画在高亮（前缀和）的位置上。交给 LazyVStack 时这里失败：它没排过的行按已排过的平均高度估
-  /// （分组标题、透镜混在里面），绕到最后时屏上是一百多行之前的那几条，选中的行根本没画出来
-  @Test func lensStaysOnRowInLongList() throws {
+  /// 长历史中绕到最后、跳回中间时也能显示选中项，集合视图只创建附近的卡片。
+  @Test func cardsStayVisibleInLongList() async throws {
     let (store, _) = try makeStore()
     // 600 条每 2 分钟一条（20 小时内：record 会按保留天数清掉过期的，最短 1 天；跨不跨午夜看跑的时候），
     // 文本长短混着：透镜高度不一（短文本 70、长文本 160）
@@ -761,22 +724,22 @@ struct ClipboardStoreTests {
     let model = ClipboardPanelModel(store: store)
     let (window, close) = try showPanel(model)
     defer { close() }
-    func settle() { for _ in 0..<8 { RunLoop.main.run(until: .now.addingTimeInterval(0.1)) } }
-    settle()
-    try expectLens(model, in: window, "第一条")
+    func settle() async throws { try await Task.sleep(for: .milliseconds(300)) }
+    try await settle()
+    try expectCard(model, in: window, "第一条")
     _ = model.handleCommand(#selector(NSResponder.moveUp(_:)))
-    settle()
+    try await settle()
     #expect(model.selectedItem?.id == model.visibleItems.last?.id)
-    try expectLens(model, in: window, "↑ 绕到最后一条")
+    try expectCard(model, in: window, "↑ 绕到最后一条")
     _ = model.handleCommand(#selector(NSResponder.moveUp(_:)))
-    settle()
-    try expectLens(model, in: window, "再 ↑")
+    try await settle()
+    try expectCard(model, in: window, "再 ↑")
     model.select(model.visibleItems[310])
-    settle()
-    try expectLens(model, in: window, "跳回中间")
+    try await settle()
+    try expectCard(model, in: window, "跳回中间")
     _ = model.handleCommand(#selector(NSResponder.moveDown(_:)))
-    settle()
-    try expectLens(model, in: window, "中间 ↓")
+    try await settle()
+    try expectCard(model, in: window, "中间 ↓")
   }
 
   /// 列表靠后时 ↑↓ 也快（2026-10-03 用户报卡顿）：找当前选中项时只搜一遍列表。原来在 firstIndex 的闭包里每比一条

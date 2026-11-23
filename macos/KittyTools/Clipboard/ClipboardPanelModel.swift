@@ -384,7 +384,7 @@ import Observation
   // MARK: 键盘
 
   /// 搜索框转来的编辑命令（mac-clipboard §4）：↑↓ 移动（带 ⇧ 扩展多选）、↩ 粘贴、⌥↩ 纯文本粘贴、
-  /// Tab 开关筛选面板、⇧Tab 循环范围、→（光标在末尾）开 ⌘K / 进子列表、←（过滤词为空）回上一级 / 关菜单、⌫（搜索为空）删标签；
+  /// Tab 开关筛选面板、⇧Tab 循环范围、搜索为空时 ←→ 浏览卡片；菜单里 → 进子列表、← 回上一级，⌫（搜索为空）删标签；
   /// Esc 依次：缩回放大预览 → 回上一级菜单 → 关浮起的菜单 → 关对话框 → 取消标签待删 → 清空搜索词 → 取消多选 → 交给面板关闭。
   /// 条件不满足的返回 false，交还字段编辑器照常处理（移光标、删字）
   func handleCommand(_ selector: Selector) -> Bool {
@@ -430,8 +430,13 @@ import Observation
       pasteSelection(plainText: !pastesPlainByDefault)
     case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)) where palette != nil: break
     case _ where palette != nil: return false
-    case #selector(NSResponder.moveRight(_:)) where caretAtEnd && selectedItem != nil:
-      palette = .actions
+    // 搜索框空着时左右键浏览卡片；输入文字时保留原生光标 / 选区操作，不打断输入法。
+    case #selector(NSResponder.moveLeft(_:)) where query.isEmpty: move(by: -1)
+    case #selector(NSResponder.moveRight(_:)) where query.isEmpty: move(by: 1)
+    case #selector(NSResponder.moveLeftAndModifySelection(_:)) where query.isEmpty:
+      move(by: -1, extending: true)
+    case #selector(NSResponder.moveRightAndModifySelection(_:)) where query.isEmpty:
+      move(by: 1, extending: true)
     case #selector(NSResponder.deleteBackward(_:)) where query.isEmpty:
       return deleteBackwardOnTokens()
     case #selector(NSResponder.moveUp(_:)): move(by: -1)

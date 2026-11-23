@@ -1,6 +1,116 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "全部操作（⌘K）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Actions (⌘K)"
+          }
+        }
+      }
+    },
+    "拖顶部调整卡片大小；停靠底部时宽度跟随屏幕。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag the top edge to resize cards. When docked at the bottom, the width follows the screen."
+          }
+        }
+      }
+    },
+    "屏幕底部" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bottom of Screen"
+          }
+        }
+      }
+    },
+    "屏幕底部铺满可见宽度；其他位置可拖左右边改宽度。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "At the bottom, the panel fills the available screen width. In other positions, drag either side to resize it."
+          }
+        }
+      }
+    },
+    "关掉显示图片信息，空格或 ⌘Y 查看完整图片。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When off, cards show image details. Use Space or ⌘Y to view the full image."
+          }
+        }
+      }
+    },
+    "在卡片中显示图片缩略图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show image thumbnails inside cards"
+          }
+        }
+      }
+    },
+    "卡片里直接显示图片" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show images in cards"
+          }
+        }
+      }
+    },
+    "关掉只显示摘要标题，空格或 ⌘Y 仍可查看完整内容。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When off, cards show only a summary title. Use Space or ⌘Y to view the full content."
+          }
+        }
+      }
+    },
+    "在卡片中显示内容摘要" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show a content preview inside each card"
+          }
+        }
+      }
+    },
+    "显示卡片预览" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show card previews"
+          }
+        }
+      }
+    },
+    "想先看内容用 ←→ 或 ↑↓；⌘ 单击、⇧ 单击照常多选。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Browse with ←→ or ↑↓. Use ⌘-click or ⇧-click to select multiple items."
+          }
+        }
+      }
+    },
     "" : {
       "shouldTranslate" : false
     },
@@ -5499,13 +5609,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lens,Preview"
+            "value" : "Lens,Preview,Cards"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "透镜,预览"
+            "value" : "透镜,预览,卡片"
           }
         }
       }
@@ -5550,13 +5660,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Position,Near Pointer,Last Position,Top of Screen"
+            "value" : "Position,Near Pointer,Last Position,Top of Screen,Bottom of Screen"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "位置,跟随鼠标,上次位置,屏幕上方"
+            "value" : "位置,跟随鼠标,上次位置,屏幕上方,屏幕底部"
           }
         }
       }
@@ -5567,13 +5677,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Width,Rows"
+            "value" : "Width,Rows,Height,Cards"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "宽度,行数"
+            "value" : "宽度,行数,高度,卡片"
           }
         }
       }

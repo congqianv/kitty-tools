@@ -17,7 +17,7 @@ struct ClipboardTab: View {
   @AppStorage(Prefs.clipboardImageRows) private var imageRows = true
   @AppStorage(Prefs.clipboardLinkPreview) private var linkPreview = true
   @AppStorage(Prefs.clipboardPasteOnClick) private var pasteOnClick = false
-  @AppStorage(Prefs.clipboardPanelPosition) private var panelPosition = "top"
+  @AppStorage(Prefs.clipboardPanelPosition) private var panelPosition = "bottom"
   @AppStorage(Prefs.clipboardPastePlain) private var pastePlain = false
   @AppStorage(Prefs.clipboardImageOCR) private var imageOCR = true
   @AppStorage(Prefs.clipboardBlockSensitive) private var blockSensitive = true
@@ -65,7 +65,7 @@ struct ClipboardTab: View {
       Section("粘贴") {
         SettingRow(
           title: "单击条目直接粘贴", subtitle: "点一下就粘贴，不用双击",
-          info: "想先看内容用 ↑↓；⌘ 单击、⇧ 单击照常多选。"
+          info: "想先看内容用 ←→ 或 ↑↓；⌘ 单击、⇧ 单击照常多选。"
         ) {
           Toggle("单击条目直接粘贴", isOn: $pasteOnClick)
             .toggleStyle(.switch)
@@ -168,17 +168,17 @@ struct ClipboardTab: View {
       ClipboardPanelSketch(showsLens: showPreview, showsLinkPreview: linkPreview)
         .frame(maxWidth: .infinity)
       SettingRow(
-        title: "显示透镜", subtitle: "选中的条目在原地展开预览", info: "关掉就是纯列表，一屏多露出几行。"
+        title: "显示卡片预览", subtitle: "在卡片中显示内容摘要", info: "关掉只显示摘要标题，空格或 ⌘Y 仍可查看完整内容。"
       ) {
-        Toggle("显示透镜", isOn: $showPreview)
+        Toggle("显示卡片预览", isOn: $showPreview)
           .toggleStyle(.switch)
       }
       .settingsAnchor(.clipboardLens)
       SettingRow(
-        title: "列表里直接显示图片", subtitle: "图片条目显示成一张小图，选中时原地放大",
-        info: "关掉就和别的条目一样，行首一个小方块，一屏多露出几行。"
+        title: "卡片里直接显示图片", subtitle: "在卡片中显示图片缩略图",
+        info: "关掉显示图片信息，空格或 ⌘Y 查看完整图片。"
       ) {
-        Toggle("列表里直接显示图片", isOn: $imageRows)
+        Toggle("卡片里直接显示图片", isOn: $imageRows)
           .toggleStyle(.switch)
       }
       .settingsAnchor(.clipboardImageRows)
@@ -190,9 +190,10 @@ struct ClipboardTab: View {
       }
       .settingsAnchor(.clipboardLinkPreview)
       SettingRow(
-        title: "面板位置", info: "屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边，上次位置是上次拖到的地方。"
+        title: "面板位置", info: "屏幕底部铺满可见宽度；其他位置可拖左右边改宽度。"
       ) {
         Picker("面板位置", selection: $panelPosition) {
+          Text("屏幕底部").tag("bottom")
           Text("屏幕上方").tag("top")
           Text("跟随鼠标").tag("mouse")
           Text("上次位置").tag("last")
@@ -201,9 +202,9 @@ struct ClipboardTab: View {
       }
       .settingsAnchor(.clipboardPanelPosition)
       PanelSizeRow(
-        detail: "拖面板的边改大小", info: "拖左右两边改宽度，拖下边改最多显示几行。",
+        detail: "拖面板的边改大小", info: "拖顶部调整卡片大小；停靠底部时宽度跟随屏幕。",
         widthKey: Prefs.clipboardPanelWidth,
-        heightKey: Prefs.clipboardPanelRows, defaultWidth: Style.listPanelWidth
+        heightKey: Prefs.clipboardPanelRows, defaultWidth: ClipboardPanelView.width
       )
       .settingsAnchor(.clipboardPanelSize)
     }
@@ -452,102 +453,59 @@ struct AppListRow: View {
   }
 }
 
-/// 剪贴板面板的示意图（实时预览，Sleeve 式）：单列 + 一块透镜 + 底栏，跟着「显示透镜」「链接显示网页标题和图片」变——
+/// 剪贴板面板的示意图（实时预览，Sleeve 式）：单列 + 一块透镜 + 底栏，跟着「显示卡片预览」「链接显示网页标题和图片」变——
 /// 关掉透镜时选中行只是一条中性高亮（纯列表，多露出几行）；透镜里的链接有没有头图。只是线框，不画真内容
 /// 剪贴板面板的示意（「高级…」里跟着开关变；设置里的悬停预览也拿它演「挤压弹开」）
 struct ClipboardPanelSketch: View {
   let showsLens: Bool
   let showsLinkPreview: Bool
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    let panel = RoundedRectangle(cornerRadius: 12, style: .continuous)
-    VStack(spacing: 0) {
-      // 搜索线：放大镜 + 一枚粉色筛选标签 + 占位
+    VStack(spacing: 8) {
       HStack(spacing: 5) {
-        Image(systemName: "magnifyingglass").font(.system(size: 9, weight: .semibold))
-          .foregroundStyle(.tertiary)
-        Capsule().fill(Style.brand.opacity(0.22)).frame(width: 22, height: 8)
+        Image(systemName: "magnifyingglass")
         Capsule().fill(.primary.opacity(0.12)).frame(width: 70, height: 5)
         Spacer()
+        Image(systemName: "line.3.horizontal.decrease")
       }
-      .padding(.horizontal, 10)
-      .frame(height: 22)
-      Hairline()
-      VStack(spacing: 0) {
-        row(tile: .primary.opacity(0.14))
-        lens
-        row(tile: .primary.opacity(0.14))
-        row(tile: Style.Family.clipboard.opacity(0.5))
-        if !showsLens { row(tile: .primary.opacity(0.14)) }
-        Spacer(minLength: 0)
-      }
-      .padding(4)
-      Hairline()
-      // 底栏：条数 ｜ 粘贴 [↩] · 操作 ⌘K
-      HStack(spacing: 4) {
-        Capsule().fill(.primary.opacity(0.12)).frame(width: 22, height: 4)
-        Spacer()
-        Capsule().fill(.primary.opacity(0.16)).frame(width: 14, height: 4)
-        RoundedRectangle(cornerRadius: 2, style: .continuous).fill(Style.brand)
-          .frame(width: 9, height: 8)
-        Capsule().fill(.primary.opacity(0.16)).frame(width: 18, height: 4)
-      }
-      .padding(.horizontal, 8)
-      .frame(height: 14)
-    }
-    .frame(width: 240, height: 136)
-    .background(.background, in: panel)
-    .overlay(panel.hairlineBorder())
-    .clipShape(panel)
-    .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
-    // 减弱动态效果：直接变（不展开、不缩放）
-    .animation(reduceMotion ? nil : Style.Motion.settle.animation(), value: showsLens)
-    .animation(reduceMotion ? nil : Style.Motion.settle.animation(), value: showsLinkPreview)
-    .padding(.vertical, 6)
-    .accessibilityHidden(true)
-  }
-
-  private func row(tile: some ShapeStyle) -> some View {
-    HStack(spacing: 5) {
-      RoundedRectangle(cornerRadius: 2.5, style: .continuous).fill(tile).frame(width: 9, height: 9)
-      Capsule().fill(.primary.opacity(0.12)).frame(width: 110, height: 4)
-      Spacer()
-      Capsule().fill(.primary.opacity(0.08)).frame(width: 26, height: 3)
-    }
-    .padding(.horizontal, 5)
-    .frame(height: 14)
-  }
-
-  /// 选中行：一块中性高亮；开着透镜时在原地展开成链接预览（头图 + 标题）+ 元信息
-  private var lens: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      row(tile: Style.Family.url.opacity(0.7))
-      if showsLens {
-        HStack(alignment: .top, spacing: 5) {
-          if showsLinkPreview {
-            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
-              .fill(
-                LinearGradient(
-                  colors: [Style.Family.url.opacity(0.5), Style.Family.search.opacity(0.35)],
-                  startPoint: .topLeading, endPoint: .bottomTrailing)
-              )
-              .frame(width: 40, height: 23)
-              .transition(.opacity)
+      .font(.system(size: 9))
+      .padding(7)
+      .background(Style.inputFill, in: .capsule)
+      HStack(spacing: 8) {
+        ForEach(0..<3) { index in
+          VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+              RoundedRectangle(cornerRadius: 3).fill(Style.Family.clipboard.opacity(0.5))
+                .frame(width: 12, height: 12)
+              Capsule().fill(.primary.opacity(0.2)).frame(width: 28, height: 4)
+            }
+            if showsLens {
+              if index == 1 && showsLinkPreview {
+                RoundedRectangle(cornerRadius: 3).fill(Style.Family.url.opacity(0.25))
+                  .frame(height: 26)
+              }
+              ForEach(0..<3) { line in
+                Capsule().fill(.primary.opacity(0.10))
+                  .frame(width: line == 2 ? 30 : 50, height: 3)
+              }
+            }
+            Spacer(minLength: 0)
+            Capsule().fill(.primary.opacity(0.08)).frame(width: 35, height: 3)
           }
-          VStack(alignment: .leading, spacing: 4) {
-            Capsule().fill(.primary.opacity(0.22)).frame(width: 80, height: 5)
-            Capsule().fill(.primary.opacity(0.12)).frame(width: 60, height: 4)
+          .padding(8)
+          .frame(maxWidth: .infinity)
+          .background(.background, in: .rect(cornerRadius: 8))
+          .overlay {
+            RoundedRectangle(cornerRadius: 8)
+              .strokeBorder(index == 0 ? Style.brand : .clear, lineWidth: 1.5)
           }
         }
-        .padding(.leading, 19)
-        .transition(.opacity)
-        Capsule().fill(.primary.opacity(0.08)).frame(width: 70, height: 3)
-          .padding(.leading, 19)
-          .padding(.bottom, 4)
-          .transition(.opacity)
       }
     }
-    .background(Style.selectedFill, in: .rect(cornerRadius: 4, style: .continuous))
+    .padding(10)
+    .frame(width: 280, height: 150)
+    .background(Style.controlFill, in: .rect(cornerRadius: Style.Radius.panel))
+    .padding(.vertical, 6)
+    .accessibilityHidden(true)
   }
 }

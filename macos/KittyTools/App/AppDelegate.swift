@@ -573,7 +573,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       model.didHide()
       idleReclaim.schedule()
     }
-    panel.squeezesIn = { Self.squeezesIn() }
     model.hidePanel = { [unowned panel] in panel.hide() }
     model.pasteTargetView = { [unowned panel] in panel.pasteTarget() }
     // ⌘K 菜单开着时瞬间长高：菜单锚在底栏上方，面板边长边插进来会越过搜索栏被裁，得先长好再从右下角放大
@@ -709,7 +708,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   lazy var clipboardPanel: OverlayPanel = {
     let model = clipboardModel
-    // 透镜指令条：和启动器同位置同宽（顶边在可见区 20%），高度按条数伸缩、顶边不动
+    // 卡片轨道：默认停靠屏幕底部，仍复用非激活面板和原来的粘贴目标。
     let panel = OverlayPanel(
       size: NSSize(
         width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
@@ -723,13 +722,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       model.reset()
       idleReclaim.schedule()
     }
-    panel.squeezesIn = { Self.squeezesIn() }
     model.hidePanel = { [unowned panel] in panel.hide() }
     model.pasteTargetView = { [unowned panel] in panel.pasteTarget() }
     model.resize = { [unowned panel] in panel.setContentHeight($0, animated: true) }
     panel.maxSize = NSSize(
-      width: Style.listPanelWidths.upperBound, height: .greatestFiniteMagnitude)
+      width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
     panel.widthKey = Prefs.clipboardPanelWidth
+    panel.resizesFromTop = true
+    panel.docksToBottom = true
     panel.heightRange = {
       ClipboardPanelView.heightRange(banner: !Permissions.isAccessibilityTrusted)
     }

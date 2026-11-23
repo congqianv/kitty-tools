@@ -6,7 +6,7 @@ import Testing
 
 struct PanelSizeTests {
   @Test func clipboardRowsFollowTheDraggedHeight() {
-    // 默认 8.5 行就是原来的 427.5，0 = 默认
+    // 沿用 8.5 的大小档位，0 = 默认卡片高度
     #expect(ClipboardPanelView.maxListHeight(rows: 0) == ClipboardPanelView.maxListHeight)
     #expect(ClipboardPanelView.maxListHeight(rows: 8.5) == ClipboardPanelView.maxListHeight)
     let chrome = ClipboardPanelView.chrome(banner: false)
@@ -15,7 +15,7 @@ struct PanelSizeTests {
       #expect(ClipboardPanelView.rows(forHeight: height, banner: false) == rows)
       // 拖到两行之间：吸到最近的半行
       #expect(
-        ClipboardPanelView.rows(forHeight: height + ClipRowView.height * 0.3, banner: false) == rows
+        ClipboardPanelView.rows(forHeight: height + 20 * 0.3, banner: false) == rows
       )
     }
     // 夹在 6.5–14.5 里；拖的范围和它对得上

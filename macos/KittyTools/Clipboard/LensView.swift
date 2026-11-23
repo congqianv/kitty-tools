@@ -1,12 +1,5 @@
-// 剪贴板透镜（Lens Bar，mac-whisker §6 剪贴板）：选中行在原地展开的预览。第一行就是普通行（ClipRowView，40），
-// 下面是按类型定高的正文区（左边对齐标题列 x = 44、右内边距 10 = 行的右内边距）+ 22 pt 元信息行 + 底 8。
-// 正文区高度只查表（Lens.bodyHeight），不量内在尺寸、不按行数估：高亮块的前缀和、滚动、窗口的透镜预留都靠它算得准；
-// 正文放进固定高度的 frame 裁切、底部 12 pt 渐隐。文本 90（短文本 36；行标题已经原样显示全的没有正文区，
-// 同一句话不画第二遍，透镜只剩元信息行）、代码 / JSON 128（行号 + 语法着色）、
-// 颜色 72（色块 + 四枚值胶囊，点一下复制）、链接 90（头图 + 标题 + 网址，LinkPreview 停留 0.25 s 才取）、
-// 图片 108（缩略图 + 尺寸；识别文字只用来搜索，不在这里显示）、文件 76（Quick Look 缩略图条）。
-// 图片行开着时（设置「列表里直接显示图片」）图片没有正文区：行里那张图自己在原地长到 108 高，透镜只剩元信息行。
-// 正文不可选中（焦点一直在搜索框，⌘ 快捷键都有效），要选文字按 ⌘Y。有搜索词时从第一个命中处摘录并高亮。
+// 剪贴板卡片内容：沿用代码着色、颜色值复制、链接预览和文件缩略图，完整检查器也共用这里的格式化函数。
+// 预览尺寸由卡片决定；只有当前选中的链接才加载网页信息，缓存与隐私规则沿用 LinkPreview。
 
 import AppKit
 import SwiftUI
@@ -120,23 +113,18 @@ struct LensView: View {
   let model: ClipboardPanelModel
   /// 设置「列表里直接显示图片」：图片的图在行头里，这里只画元信息行
   var imageRows = false
+  var selected = true
 
   var body: some View {
-    let height = Lens.bodyHeight(for: item, form: form, imageRows: imageRows)
-    VStack(alignment: .leading, spacing: 0) {
-      if height > 0 {
+    VStack(alignment: .leading, spacing: 6) {
+      GeometryReader { geometry in
         content
-          .frame(maxWidth: .infinity, alignment: .topLeading)
-          .frame(height: height, alignment: .topLeading)
+          .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
           .clipped()
           .fading(when: fades)
       }
       meta.frame(height: Lens.meta)
     }
-    .padding(.leading, 44)
-    // 右边和行的右内边距一样（10）：元信息行右边的「原文 / 美化」和行右侧的字、键帽共一条右边线
-    .padding(.trailing, 10)
-    .padding(.bottom, Lens.bottom)
   }
 
   @ViewBuilder private var content: some View {
@@ -145,7 +133,11 @@ struct LensView: View {
       if form == .color, let color = ContentForm.color(in: item.text ?? "") {
         ColorLens(color: color)
       } else if form == .link, let url = ContentForm.firstLink(in: item.text ?? "") {
-        LinkCard(url: url, text: item.text ?? "", compact: true)
+        if selected {
+          LinkCard(url: url, text: item.text ?? "", compact: true)
+        } else {
+          Text(highlighted(item.text ?? "")).font(.system(size: 13)).foregroundStyle(Lens.ink)
+        }
       } else if form == .code || form == .json {
         CodeLens(text: model.displayText(of: item), json: form == .json, query: model.query)
       } else if Lens.isShort(item.text ?? "") {
@@ -184,21 +176,10 @@ struct LensView: View {
     return attributed
   }
 
-  /// 「代码 · 70 字 · 14:02 · [图标] Xcode」，JSON 右边多一个「原文 / 美化」（默认美化，按钮写「原文」，体检 A10）。
-  /// 来源前面那个「·」和前面几个是同一种写法（空格 · 空格，并在同一段字里）：单独放一个 Text 再靠 HStack 的间距隔开的话，
-  /// 它两边比前面的宽一倍
+  /// 来源和时间由卡片头尾显示；这里只留内容大小与 JSON 原文 / 美化开关。
   private var meta: some View {
-    let icon = AppIcons.icon(for: item.sourceBundleID)
-    let hasSource = icon != nil || item.sourceName != nil
-    return HStack(spacing: 0) {
-      Text(hasSource ? metaText + " · " : metaText).lineLimit(1)
-      if let icon {
-        Image(nsImage: icon).resizable().frame(width: 16, height: 16).accessibilityHidden(true)
-          .padding(.trailing, 6)
-      }
-      if let name = item.sourceTitle {
-        Text(name).lineLimit(1)
-      }
+    HStack(spacing: 0) {
+      Text(metaText).lineLimit(1)
       Spacer(minLength: 8)
       if form == .json {
         Button(model.prettyJSON ? "原文" : "美化") { model.prettyJSON.toggle() }
@@ -225,8 +206,7 @@ struct LensView: View {
           localized: "clipboard.lens.fileCount", defaultValue: "\(item.filePaths?.count ?? 0) 个",
           comment: "透镜元信息里文件条目有几个文件")
       }
-    return [Lens.typeTitle(item, form: form), detail, Self.exactTime(item.copiedAt)]
-      .compactMap { $0 }.joined(separator: " · ")
+    return detail ?? Lens.typeTitle(item, form: form)
   }
 
   /// 「70 字」（透镜、⌘Y 大卡的元信息同一个）
@@ -323,7 +303,7 @@ private struct ColorLens: View {
   var body: some View {
     let values = ColorCard.values(color)
     let shape = RoundedRectangle(cornerRadius: Style.Radius.control, style: .continuous)
-    HStack(alignment: .top, spacing: 12) {
+    VStack(alignment: .leading, spacing: 8) {
       shape.fill(Color(color))
         .background(Checkerboard().clipShape(shape))
         .overlay(shape.strokeBorder(Style.swatchRim, lineWidth: 1))
@@ -335,18 +315,11 @@ private struct ColorLens: View {
             .padding(.horizontal, 6)
             .foregroundStyle(ColorCard.isLight(color) ? .black.opacity(0.8) : .white)
         }
-        .frame(width: 120, height: 72)
-      Grid(horizontalSpacing: 8, verticalSpacing: 8) {
-        GridRow {
-          chip(values, 0)
-          chip(values, 1)
-        }
-        GridRow {
-          chip(values, 2)
-          chip(values, 3)
-        }
+        .frame(minHeight: 12, maxHeight: .infinity)
+      HStack(spacing: 6) {
+        ForEach(0..<4) { index in chip(values, index) }
       }
-      .frame(maxWidth: 440)
+      .frame(height: 22)
     }
   }
 
@@ -361,23 +334,20 @@ private struct ColorLens: View {
         if copied == index { copied = nil }
       }
     } label: {
-      HStack(spacing: 6) {
-        Text(values[index])
-          .font(.system(size: 11, design: .monospaced))
-          .lineLimit(1)
-          .truncationMode(.middle)
-        Spacer(minLength: 4)
-        Image(systemName: copied == index ? "checkmark" : "doc.on.doc")
-          .font(.system(size: 10, weight: .medium))
-          .foregroundStyle(copied == index ? Color(nsColor: .systemGreen) : .secondary)
-          .contentTransition(.symbolEffect(.replace))
+      Group {
+        if copied == index {
+          Image(systemName: "checkmark")
+        } else {
+          Text(verbatim: ["HEX", "RGB", "HSL", "Swift"][index])
+        }
       }
-      .padding(.horizontal, 10)
+      .font(.system(size: 10, weight: .medium, design: .monospaced))
       .frame(maxWidth: .infinity)
-      .frame(height: 32)
+      .frame(height: 22)
       .background(Style.controlFill, in: .capsule)
       .contentShape(.capsule)
     }
+    .accessibilityLabel("复制 \(values[index])")
     .buttonStyle(PressScale())
     .help("复制 \(values[index])")
   }
@@ -413,21 +383,21 @@ private struct FileStrip: View {
   let paths: [String]
 
   var body: some View {
-    HStack(alignment: .top, spacing: 12) {
-      ForEach(paths.prefix(6), id: \.self) { path in
-        VStack(alignment: .leading, spacing: 4) {
-          FileThumbnail(path: path, side: 48).frame(width: 48, height: 48, alignment: .leading)
+    VStack(alignment: .leading, spacing: 8) {
+      ForEach(paths.prefix(3), id: \.self) { path in
+        HStack(spacing: 8) {
+          FileThumbnail(path: path, side: 32).frame(width: 32, height: 32, alignment: .leading)
           Text(URL(filePath: path).lastPathComponent)
             .font(.system(size: 11))
             .foregroundStyle(Lens.ink)  // 靠左后贴着正文区的边，见 Lens.ink
             .lineLimit(1)
             .truncationMode(.middle)
-            .frame(width: 72, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .help(path)
       }
-      if paths.count > 6 {
-        Text("+\(paths.count - 6)")
+      if paths.count > 3 {
+        Text("+\(paths.count - 3)")
           .font(.system(size: 12, weight: .medium))
           .foregroundStyle(.secondary)
           .frame(height: 48)

@@ -63,10 +63,14 @@ final class OverlayPanel: NSPanel {
   var widthKey: String?
   /// 拖下边改「最高多高」（W2）：设了才有下边的拖边。拖的时候窗口跟着鼠标、夹在 heightRange 里（不听内容改高度），
   /// 松手交给 heightDragged 记下来，内容再按新的上限把高度改回去（内容少时照样缩回去）
+  /// 剪贴板卡片从顶边改高度；底部停靠时底边始终留在可见区内。设置在 heightRange 之前。
+  var resizesFromTop = false
+  var docksToBottom = false
+
   var heightRange: (() -> ClosedRange<CGFloat>)? {
     didSet {
       guard oldValue == nil, heightRange != nil else { return }
-      host.superview?.addSubview(ResizeEdge(side: .bottom))
+      host.superview?.addSubview(ResizeEdge(side: resizesFromTop ? .top : .bottom))
     }
   }
   var heightDragged: ((CGFloat) -> Void)?
@@ -327,7 +331,7 @@ final class OverlayPanel: NSPanel {
     guard !Style.reduceMotion, let layer = host.layer else { return }
     let drop = CASpringAnimation(perceptualDuration: 0.24, bounce: 0.12)
     drop.keyPath = "transform.translation.y"
-    drop.fromValue = 6  // AppKit 图层 y 向上：正值 = 在上方
+    drop.fromValue = docksToBottom ? -24 : 6  // 底部卡片从下方进入，其余面板保持下落
     drop.toValue = 0
     drop.duration = drop.settlingDuration
     layer.add(drop, forKey: "enter")
@@ -661,6 +665,9 @@ final class OverlayPanel: NSPanel {
     }
     requestedHeight = height
     guard !isDraggingHeight else { return }
+    let height =
+      resizesFromTop
+      ? min(height, max(0, (screen?.visibleFrame.height ?? (height + 16)) - 16)) : height
     // 挤压入场还在弹：改它的终点（顶边不动），别另起一段帧动画和它抢
     if var running = squeeze {
       running.end.origin.y = running.end.maxY - height
@@ -670,8 +677,11 @@ final class OverlayPanel: NSPanel {
     }
     guard abs(frame.height - height) > 0.5 else { return }
     var target = frame
-    target.origin.y = target.maxY - height
+    if !resizesFromTop { target.origin.y = target.maxY - height }
     target.size.height = height
+    if resizesFromTop, let visible = screen?.visibleFrame {
+      target.origin.y = min(max(target.minY, visible.minY), visible.maxY - height)
+    }
     if let visible = screen?.visibleFrame, target.minY < visible.minY {
       target.origin.y = min(visible.minY, visible.maxY - height)
     }
@@ -706,7 +716,16 @@ final class OverlayPanel: NSPanel {
     let point = below.map { NSPoint(x: $0.midX, y: $0.midY) } ?? NSEvent.mouseLocation
     let screen = NSScreen.containing(point) ?? NSScreen.main
     guard let visible = screen?.visibleFrame else { return }
+    if resizesFromTop && !docksToBottom && frame.width > visible.width - 16 {
+      var fitting = frame
+      fitting.size.width = max(0, visible.width - 16)
+      setFrame(fitting, display: false)
+    }
     defer { placed = (NSPoint(x: frame.minX, y: frame.maxY), frame.width) }
+    if docksToBottom {
+      return setFrame(
+        Self.frame(atBottomOf: visible, height: requestedHeight ?? frame.height), display: false)
+    }
     if let below {
       return setFrameOrigin(Self.frame(below: below, size: frame.size, in: visible).origin)
     }
@@ -781,6 +800,15 @@ final class OverlayPanel: NSPanel {
     x = max(min(x, area.maxX - size.width), area.minX)
     top = min(max(top, area.minY + size.height), area.maxY)
     return NSRect(x: x, y: top - size.height, width: size.width, height: size.height)
+  }
+
+  /// 停靠的卡片面板：以鼠标所在屏幕的可见区为准，避开程序坞，也支持负坐标的副屏。
+  static func frame(atBottomOf visible: NSRect, height: CGFloat) -> NSRect {
+    let inset = min(8, max(0, min(visible.width, visible.height) / 4))
+    return NSRect(
+      x: visible.minX + inset, y: visible.minY + inset,
+      width: max(0, visible.width - inset * 2),
+      height: min(max(height, 0), max(0, visible.height - inset * 2)))
   }
 
   /// 屏幕上方（启动器、剪贴板面板、主界面、翻译浮窗「屏幕上方」，纯函数配单测）：横向居中、顶边在可见区 20% 处；
@@ -912,7 +940,7 @@ private struct PanelRoot<Content: View>: View {
 /// 无边框窗口的拖边：左右改宽度（夹在 minSize / maxSize 之间，另一边不动），下边改「最高多高」（W2，顶边不动、
 /// 夹在 heightRange 里，松手交给 heightDragged）。本 App 不激活，光标矩形不生效：用 activeAlways 的追踪区手动设光标
 private final class ResizeEdge: NSView {
-  enum Side { case left, right, bottom }
+  enum Side { case left, right, bottom, top }
 
   private let side: Side
   private var start: (mouse: CGFloat, frame: NSRect)?
@@ -926,6 +954,7 @@ private final class ResizeEdge: NSView {
       case .left: [.height, .maxXMargin]
       case .right: [.height, .minXMargin]
       case .bottom: [.width, .maxYMargin]
+      case .top: [.width, .minYMargin]
       }
   }
 
@@ -941,13 +970,15 @@ private final class ResizeEdge: NSView {
       case .right:
         NSRect(x: bounds.maxX - Self.width, y: 0, width: Self.width, height: bounds.height)
       // 两头让开左右拖边的那 6 pt；父视图是翻转坐标时（没实测玻璃底的 contentView 是不是）底边在 maxY
-      case .bottom:
+      case .bottom, .top:
         NSRect(
-          x: Self.width, y: superview.isFlipped ? bounds.maxY - Self.width : 0,
+          x: Self.width,
+          y: (side == .top) != superview.isFlipped ? bounds.maxY - Self.width : 0,
           width: max(bounds.width - 2 * Self.width, 0), height: Self.width)
       }
-    if side == .bottom {
-      autoresizingMask = [.width, superview.isFlipped ? .minYMargin : .maxYMargin]
+    if side == .bottom || side == .top {
+      let upper = (side == .top) != superview.isFlipped
+      autoresizingMask = [.width, upper ? .minYMargin : .maxYMargin]
     }
   }
 
@@ -961,7 +992,11 @@ private final class ResizeEdge: NSView {
   }
 
   override func mouseEntered(with event: NSEvent) {
-    (side == .bottom ? NSCursor.resizeUpDown : NSCursor.resizeLeftRight).set()
+    if (window as? OverlayPanel)?.docksToBottom == true, side == .left || side == .right {
+      NSCursor.arrow.set()
+      return
+    }
+    (side == .bottom || side == .top ? NSCursor.resizeUpDown : NSCursor.resizeLeftRight).set()
   }
   override func mouseExited(with event: NSEvent) { if start == nil { NSCursor.arrow.set() } }
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -969,24 +1004,28 @@ private final class ResizeEdge: NSView {
 
   override func mouseDown(with event: NSEvent) {
     guard let window else { return }
+    if (window as? OverlayPanel)?.docksToBottom == true, side == .left || side == .right { return }
     let mouse = NSEvent.mouseLocation
-    start = (side == .bottom ? mouse.y : mouse.x, window.frame)
+    start = (side == .bottom || side == .top ? mouse.y : mouse.x, window.frame)
     (window as? OverlayPanel)?.isUserResizing = true
-    if side == .bottom { (window as? OverlayPanel)?.isDraggingHeight = true }
+    if side == .bottom || side == .top { (window as? OverlayPanel)?.isDraggingHeight = true }
   }
 
   /// 只改 x 和宽度；高度和 y 取当前的（宽度一变内容重排，高度会跟着 setContentHeight 变）
   override func mouseDragged(with event: NSEvent) {
     guard let window, let start else { return }
-    if side == .bottom {
-      // 往下拖 = 变高；顶边不动，夹在 heightRange 和屏幕可见区里
+    if side == .bottom || side == .top {
+      // 顶拖边向上长、底拖边向下长；另一条边不动，夹在可见区里。
       let range =
         (window as? OverlayPanel)?.heightRange?() ?? start.frame.height...start.frame.height
-      let bottom = window.screen?.visibleFrame.minY ?? -.greatestFiniteMagnitude
-      let proposed = start.frame.height + start.mouse - NSEvent.mouseLocation.y
-      let height = min(max(proposed, range.lowerBound), range.upperBound, start.frame.maxY - bottom)
+      let visible = window.screen?.visibleFrame ?? start.frame
+      let available =
+        side == .top ? visible.maxY - start.frame.minY : start.frame.maxY - visible.minY
+      let delta = NSEvent.mouseLocation.y - start.mouse
+      let proposed = start.frame.height + (side == .top ? delta : -delta)
+      let height = min(max(proposed, range.lowerBound), range.upperBound, available)
       var frame = start.frame
-      frame.origin.y = start.frame.maxY - height
+      if side == .bottom { frame.origin.y = start.frame.maxY - height }
       frame.size.height = height
       NSAnimationContext.runAnimationGroup { context in
         context.duration = 0
@@ -1014,7 +1053,7 @@ private final class ResizeEdge: NSView {
     start = nil
     panel.isUserResizing = false
     NSCursor.arrow.set()
-    if side == .bottom {
+    if side == .bottom || side == .top {
       panel.isDraggingHeight = false
       // 按住没拖就松手不改设置
       if dragged { panel.heightDragged?(panel.frame.height) }

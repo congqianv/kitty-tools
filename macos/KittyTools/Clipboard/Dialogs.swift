@@ -27,7 +27,7 @@ struct DialogOverlay: View {
         let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
         card(dialog)
           .padding(14)
-          .frame(maxWidth: .infinity, alignment: .leading)
+          .frame(maxWidth: 708, alignment: .leading)
           // 阴影只挂在底上：挂在整张卡上会给里面的每个字都加阴影。和动作菜单同一档（Style 的 floatingShadow）
           .background { shape.fill(.regularMaterial).floatingShadow() }
           .overlay(shape.hairlineBorder())

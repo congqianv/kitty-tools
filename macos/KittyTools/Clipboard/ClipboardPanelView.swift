@@ -1,14 +1,6 @@
-// 剪贴板面板根视图（透镜指令条 Lens Bar，mac-whisker §6 剪贴板）：宽 720、贴在屏幕上方 20%（和启动器同位置），
-// 高度按条数伸缩、顶边不动、≤ 520（height(for:)；透镜预留是常数，↑↓ 永远不改窗口高度）。
-// 56 pt 搜索线 = 放大镜 + 粉色筛选标签 + 输入框；单列满宽列表（始终按天分组吸顶，搜索只过滤，体检 A6），
-// 行 40（图片行 64：设置「列表里直接显示图片」，默认开），选中行原地展开成透镜（LensView），一块中性高亮在行间滑动、
-// 和透镜一起伸缩（前缀和定位）；列表只画可见区附近的项、
-// 上下按前缀和撑开，吸顶的分组标题自己画（list，2026-10-03：交给 LazyVStack 时条目多了高亮错位、越往后越卡）；
-// 片段范围第一行固定一条虚线的「＋ 新建片段 ⌘N」；底栏 36 = （已暂停记录）条数 / 修饰键提示 / 多选动词 ｜ 粘贴 ↩ · 操作 ⌘K ｜
-// 齿轮 图钉。
-// Tab 筛选面板从搜索栏左下长出、⌘K 操作面板从底栏右下长出、多选底栏「收藏夹…」的列表从按钮上方长出（共用 Shell/ActionMenu）；
-// 右键菜单和 ⌘K 同一份动作表；行能拖到别的 App（ClipDrag）；对话框从搜索栏下沿落下。
-// 状态和操作都在 ClipboardPanelModel。
+// 剪贴板卡片面板：顶部胶囊搜索与筛选，横向复用的内容卡片，底栏保留多选和操作入口。
+// 数据、搜索、片段展开、撤销和粘贴都交给 ClipboardPanelModel；窗口仍用不激活前台的 OverlayPanel。
+// 高度与条数、当前选中项无关；顶部拖边改变卡片大小，菜单和编辑对话框打开时临时扩高。
 
 import SwiftUI
 
@@ -24,9 +16,9 @@ struct ClipboardPanelView: View {
   @Bindable var model: ClipboardPanelModel
   @AppStorage(Prefs.clipboardHideOnUnfocus) private var hideOnUnfocus = true
   @AppStorage(Prefs.clipboardShowPreview) private var showsLens = true
-  /// 图片条目在列表里直接画图（64 高的图片行，选中时图在原地长大）；关掉就和别的条目一样是 24 pt 小方块
+  /// 图片卡片显示缩略图；关掉时显示图片信息，完整预览仍然可用。
   @AppStorage(Prefs.clipboardImageRows) private var imageRows = true
-  /// 拖下边定的最多几行（W2，0 = 默认）
+  /// 沿用旧的大小偏好：0 = 默认卡片大小。
   @AppStorage(Prefs.clipboardPanelRows) private var maxRows = 0.0
   /// 默认粘贴为纯文本：底栏按住 ⌥ 的提示、右键菜单的替代粘贴跟着换名字
   @AppStorage(Prefs.clipboardPastePlain) private var pastesPlain = false
@@ -38,29 +30,25 @@ struct ClipboardPanelView: View {
   @State private var shownKeys: EventModifiers = []
   /// 多选底栏「收藏夹…」按钮的左缘（面板坐标）：收藏夹列表锚在它上方
   @State private var groupsButtonX: CGFloat = 0
-  /// 滚动位置落在第几段（ListWindow）：列表只画这一段附近的项，跨段时才重算面板。
-  /// 别存滚动位置本身（每帧都会让整个面板重算）；吸顶标题逐帧的位置按几何算（StickyHeaders）
-  @State private var scrollBand = 0
-  @State private var position = ScrollPosition()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-  /// 和启动器同宽（两块面板同位置同宽，数只写在 Style 里）
-  static let width = Style.listPanelWidth
+  /// 截图自检和非停靠位置的默认宽度；停靠时按当前屏幕可见宽度铺开。
+  static let width: CGFloat = 1100
   static let searchHeight: CGFloat = 56
   static let barHeight: CGFloat = 36
-  static let headerHeight: CGFloat = 24
   static let bannerHeight: CGFloat = 30
-  /// 列表四周内缩（面板圆角 16 − 6 = 高亮 / 透镜的圆角 10，同心）
+  /// 浮起菜单距面板边缘的最小留白。
   static let inset: CGFloat = 6
-  /// 列表区最高 427.5：连同搜索线、发丝线、底栏正好 520
-  static let maxListHeight: CGFloat = 427.5
-  /// 拖下边能定的行数（W2）：默认 8.5 行就是 427.5；按半行吸附
+  /// 默认卡片区高度（包含卡片四周留白）。
+  static let maxListHeight: CGFloat = 232
+  /// 沿用旧版大小档位，避免改动同步 / 导出格式；每档对应 20 pt。
   static let rowRange = 6.5...14.5
 
   /// 列表区最高多高：拖出来的行数（0 = 默认）每多一行加一行高
   static func maxListHeight(rows: Double) -> CGFloat {
-    rows > 0 ? maxListHeight + CGFloat(rows - 8.5) * ClipRowView.height : maxListHeight
+    rows > 0
+      ? maxListHeight + CGFloat(min(max(rows, rowRange.lowerBound), rowRange.upperBound) - 8.5) * 20
+      : maxListHeight
   }
 
   /// 面板里列表区以外的高度：搜索栏、发丝线、授权横幅、底栏
@@ -68,7 +56,7 @@ struct ClipboardPanelView: View {
     searchHeight + 0.5 + (banner ? bannerHeight : 0) + barHeight
   }
 
-  /// 拖下边时面板能多高（W2）：列表区 6.5 到 14.5 行
+  /// 顶部拖边可调整的高度范围，沿用旧版大小档位。
   static func heightRange(banner: Bool) -> ClosedRange<CGFloat> {
     chrome(banner: banner) + maxListHeight(rows: rowRange.lowerBound)...chrome(banner: banner)
       + maxListHeight(rows: rowRange.upperBound)
@@ -76,10 +64,9 @@ struct ClipboardPanelView: View {
 
   /// 拖到这么高对应最多几行：按半行吸附，夹在 rowRange 里（纯函数，配单测）
   static func rows(forHeight height: CGFloat, banner: Bool) -> Double {
-    let rows = 8.5 + Double((height - chrome(banner: banner) - maxListHeight) / ClipRowView.height)
+    let rows = 8.5 + Double((height - chrome(banner: banner) - maxListHeight) / 20)
     return min(max((rows - 0.5).rounded() + 0.5, rowRange.lowerBound), rowRange.upperBound)
   }
-  static let emptyListHeight: CGFloat = 140
   /// 筛选面板 / ⌘K 开着时列表区至少这么高（8.5 行菜单 + 上下余量），短列表时面板先长到放得下
   static let paletteListHeight: CGFloat = ActionMenu.rowHeight * 8.5 + 26
   /// 面板根视图的坐标系（多选底栏按钮报位置用）
@@ -88,21 +75,11 @@ struct ClipboardPanelView: View {
   var body: some View {
     let items = model.visibleItems
     let selected = model.selectedItem(in: items)
-    let sections = Self.daySections(items)
-    let lensOpen = showsLens && model.multiSelection.isEmpty
-    let newSnippet = model.showsNewSnippetRow(in: items)
-    let layout = ListLayout(
-      leading: newSnippet ? ClipRowView.height : 0, sections: sections,
-      lens: lensOpen
-        ? selected.map {
-          ($0.id, Lens.height(for: $0, form: model.contentForm(of: $0), imageRows: imageRows))
-        } : nil,
-      imageRows: imageRows)
     VStack(spacing: 0) {
       searchBar
       Hairline()
       if !trusted { permissionBanner }
-      listArea(items, layout: layout, selected: selected, lensOpen: lensOpen)
+      cardArea(items, selected: selected)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay { DialogOverlay(model: model) }
       bottomBar(count: items.count)
@@ -141,7 +118,9 @@ struct ClipboardPanelView: View {
         )
         .padding(
           .leading,
-          min(max(groupsButtonX - 8, Self.inset), Self.width - ActionMenu.width - Self.inset)
+          min(
+            max(groupsButtonX - 8, Self.inset),
+            max(groupsButtonX, 720) - ActionMenu.width - Self.inset)
         )
         .padding(.bottom, Self.barHeight + 4)
       }
@@ -151,10 +130,7 @@ struct ClipboardPanelView: View {
       value: model.palette
     )
     .onChange(
-      of: Self.height(
-        rowsHeight: Self.rowsHeight(items, newSnippet: newSnippet, imageRows: imageRows),
-        sections: sections.count, reservesLens: showsLens && !items.isEmpty, banner: !trusted,
-        model: model, maxRows: maxRows),
+      of: Self.height(for: model, banner: !trusted, maxRows: maxRows),
       initial: true
     ) { _, height in model.resize(height) }
     .onModifierKeysChanged(mask: [.command, .option]) { _, keys in heldKeys = keys }
@@ -175,44 +151,7 @@ struct ClipboardPanelView: View {
 
   // MARK: 高度
 
-  /// 面板高度（窗口和截图自检同一个算法）：56 + 0.5 +（授权横幅）+ 列表区 + 36。列表区 =
-  /// min(上下内缩 12 + 24 × 分组数 + 各行高之和 + 透镜预留, 427.5)，空列表 140；对话框开着给满，浮起的菜单开着至少放得下 8.5 行
-  /// rowsHeight：各行（没展开时）的高加起来（同名函数）；maxRows：拖下边定的最多几行（0 = 默认 8.5）
-  static func height(
-    rowsHeight: CGFloat, sections: Int, reservesLens: Bool, banner: Bool,
-    model: ClipboardPanelModel,
-    maxRows: Double = 0
-  ) -> CGFloat {
-    var list = listHeight(
-      rowsHeight: rowsHeight, sections: sections, reservesLens: reservesLens, maxRows: maxRows)
-    if model.dialog != nil {
-      list = maxListHeight(rows: maxRows)
-    } else if model.palette != nil {
-      list = max(list, paletteListHeight)
-    }
-    return chrome(banner: banner) + list
-  }
-
-  /// rowsHeight：各行（没展开时）的高加起来（同名函数），0 = 空列表
-  static func listHeight(
-    rowsHeight: CGFloat, sections: Int, reservesLens: Bool, maxRows: Double = 0
-  ) -> CGFloat {
-    guard rowsHeight > 0 else { return emptyListHeight }
-    let content =
-      inset * 2 + headerHeight * CGFloat(sections) + rowsHeight
-      + (reservesLens ? Lens.reserve : 0)
-    return min(content, maxListHeight(rows: maxRows))
-  }
-
-  /// 各行（没展开时）的高加起来：「新建片段」40、图片行 64（开着「列表里直接显示图片」）、其余 40。
-  /// 透镜预留（Lens.reserve，按最高的代码透镜比普通行多出的 158）也盖得住图片行展开多出的 82
-  static func rowsHeight(_ items: [ClipItem], newSnippet: Bool, imageRows: Bool) -> CGFloat {
-    items.reduce(newSnippet ? ClipRowView.height : 0) {
-      $0 + ClipRowView.height(of: $1, imageRows: imageRows)
-    }
-  }
-
-  /// 按模型现算（AppDelegate 建窗口、截图自检用）；视图里用上面那个，省一次搜索
+  /// 原来的行数偏好继续表示大小档位，不迁移数据；空态、筛选和换条目不改变卡片区高度。
   static func height(
     for model: ClipboardPanelModel,
     showsLens: Bool = UserDefaults.standard.bool(forKey: Prefs.clipboardShowPreview),
@@ -220,47 +159,48 @@ struct ClipboardPanelView: View {
     maxRows: Double = UserDefaults.standard.double(forKey: Prefs.clipboardPanelRows),
     imageRows: Bool = UserDefaults.standard.bool(forKey: Prefs.clipboardImageRows)
   ) -> CGFloat {
-    let items = model.visibleItems
-    return height(
-      rowsHeight: rowsHeight(
-        items, newSnippet: model.showsNewSnippetRow(in: items), imageRows: imageRows),
-      sections: daySections(items).count,
-      reservesLens: showsLens && !items.isEmpty, banner: banner, model: model, maxRows: maxRows)
+    let content = maxListHeight(rows: maxRows)
+    let minimum: CGFloat = model.dialog != nil ? 420 : model.palette != nil ? paletteListHeight : 0
+    return chrome(banner: banner) + max(content, minimum)
   }
 
   // MARK: 搜索线
 
   private var searchBar: some View {
     let tokens = model.tokens
-    // 线头（符号定宽）和左右内边距在 SearchLine 里，和启动器的搜索线是同一个
-    return SearchLine(symbol: searchSymbol) {
-      ForEach(tokens) { token in
-        TokenChip(
-          token: token, armed: model.armsLastToken && token.id == tokens.last?.id,
-          open: { model.palette = .filters }, remove: { model.remove(token.kind) }
+    return HStack(spacing: 10) {
+      SearchLine(symbol: searchSymbol) {
+        ForEach(tokens) { token in
+          TokenChip(
+            token: token, armed: model.armsLastToken && token.id == tokens.last?.id,
+            open: { model.palette = .filters }, remove: { model.remove(token.kind) }
+          )
+          .disabled(model.dialog != nil)
+          .transition(.opacity)
+        }
+        CommandTextField(
+          text: model.palette != nil ? $model.actionQuery : $model.query,
+          placeholder: placeholder, fontSize: 15, onCommand: model.handleCommand,
+          onSpace: model.handleSpace
         )
-        // 对话框开着时标签点不动：压暗只盖列表区，别在对话框上面再弹筛选面板
-        .disabled(model.dialog != nil)
-        .transition(
-          .asymmetric(
-            insertion: reduceMotion
-              ? .opacity
-              : .scale(scale: 0.85, anchor: .leading).combined(with: .opacity)
-                .animation(Style.Motion.pop.animation()),
-            removal: reduceMotion ? .opacity : AnyTransition(TokenCollapse())))
+        .frame(minWidth: 100, maxWidth: .infinity)
       }
-      // 筛选面板 / ⌘K 开着时，搜索框改成过滤它们的条目
-      CommandTextField(
-        text: model.palette != nil ? $model.actionQuery : $model.query,
-        placeholder: placeholder, fontSize: 20, onCommand: model.handleCommand,
-        onSpace: model.handleSpace
-      )
-      .frame(maxWidth: .infinity)
-      .padding(.leading, tokens.isEmpty ? 0 : 2)
+      .frame(height: 36)
+      .background(Style.inputFill, in: .capsule)
+      .frame(maxWidth: 720)
+      Button {
+        model.palette = model.palette == .filters ? nil : .filters
+      } label: {
+        Image(systemName: "line.3.horizontal.decrease").frame(width: 32, height: 32)
+      }
+      .buttonStyle(.plain)
+      .help("筛选范围、收藏夹、类型、来源")
+      .accessibilityLabel("筛选范围、收藏夹、类型、来源")
+      .accessibilityAddTraits(model.palette == .filters ? .isSelected : [])
+      .disabled(model.dialog != nil)
     }
-    .animation(
-      Style.Motion.settle.animation(reduced: reduceMotion), value: tokens.map(\.id)
-    )
+    .padding(.horizontal, 20)
+    .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: tokens.map(\.id))
     .frame(height: Self.searchHeight)
   }
 
@@ -303,191 +243,17 @@ struct ClipboardPanelView: View {
     .background(Color(nsColor: .systemOrange).opacity(0.08))
   }
 
-  // MARK: 列表
+  // MARK: 卡片
 
-  @ViewBuilder private func listArea(
-    _ items: [ClipItem], layout: ListLayout, selected: ClipItem?, lensOpen: Bool
-  ) -> some View {
-    if items.isEmpty && layout.leading == 0 {
-      emptyState.onAppear { resetScroll() }
+  @ViewBuilder private func cardArea(_ items: [ClipItem], selected: ClipItem?) -> some View {
+    if items.isEmpty && !model.showsNewSnippetRow(in: items) {
+      emptyState
     } else {
-      list(items, layout: layout, selected: selected, lensOpen: lensOpen)
+      ClipboardCards(
+        model: model, items: items, selectedID: selected?.id,
+        showsPreview: showsLens, imageRows: imageRows,
+        showsShortcuts: shownKeys.contains(.command))
     }
-  }
-
-  /// 只画可见区附近的那些项（行、分组标题、「新建片段」），上下按前缀和算出的高度撑开（ListWindow，为什么不用 LazyVStack
-  /// 见那里；2026-10-03 用户报条目多了高亮错位、滚动和 ↑↓ 卡）：画出来的位置就是 ListLayout 算的，和高亮、滚动、吸顶
-  /// 对得上；按键、滚动的开销只和画出来的三十来项有关。吸顶的分组标题因此自己画（StickyHeaders）
-  private func list(_ items: [ClipItem], layout: ListLayout, selected: ClipItem?, lensOpen: Bool)
-    -> some View
-  {
-    let range = layout.window(band: scrollBand)
-    return ScrollView {
-      VStack(alignment: .leading, spacing: 0) {
-        Color.clear.frame(height: layout.top(of: range.lowerBound))
-        ForEach(range.map { (id: entryID($0, in: layout), index: $0) }, id: \.id) { entry in
-          switch layout.entries[entry.index] {
-          case .newSnippet: newSnippetRow
-          case .header(let section): SectionHeader(section: layout.sections[section])
-          case .row(let section, let index):
-            clipRow(layout.sections[section].rows[index], selected: selected, lensOpen: lensOpen)
-          }
-        }
-        Color.clear.frame(height: layout.totalHeight - layout.top(of: range.upperBound))
-      }
-      .background(alignment: .topLeading) { highlight(layout: layout, selected: selected) }
-      // 吸顶的分组标题在滚动内容里（滚动条照样画在它上面）：只给画出来的这一段涉及的那一两组画
-      .overlay(alignment: .top) {
-        if let shown = layout.sections(in: range) {
-          StickyHeaders(
-            sections: layout.sections, bounds: layout.sectionTops + [layout.totalHeight],
-            shown: shown)
-        }
-      }
-      .animation(model.listMotion.animation(reduced: reduceMotion), value: items.map(\.id))
-      // 透镜移动：高亮的 offset + height、旧行收起、新行展开同一个 transaction、同一条曲线
-      .animation(
-        model.selectionMotion.animation(reduced: reduceMotion),
-        value: LensKey(id: selected?.id, isOpen: lensOpen)
-      )
-      .onChange(of: model.listGeneration) {
-        model.settleList()
-        resetScroll()
-        position.scrollTo(edge: .top)
-      }
-      .padding(Self.inset)
-    }
-    // 让整块透镜露出来：只在它（连同吸顶的分组标题）被挡住时滚，按前缀和算（共用 ListReveal）
-    .modifier(
-      RevealsSelection(
-        position: $position, key: selected?.id, motion: model.selectionMotion,
-        coveredTop: Self.headerHeight, inset: Self.inset
-      ) {
-        guard let id = selected?.id, let offset = layout.offset(of: id) else { return nil }
-        let top = offset + Self.inset
-        return top...top + layout.height(of: id)
-      }
-    )
-    .modifier(TracksScrollBand(band: $scrollBand))
-    // 新的滚动视图（空态之后列表回来）从顶上开始
-    .onAppear { resetScroll() }
-  }
-
-  private func resetScroll() { scrollBand = 0 }
-
-  /// ForEach 的身份：标题 = 那一天，行 = 所在分组 + 条目（为什么带分组见 clipRow）
-  private func entryID(_ index: Int, in layout: ListLayout) -> EntryID {
-    switch layout.entries[index] {
-    case .newSnippet: .newSnippet
-    case .header(let section): .header(layout.sections[section].day)
-    case .row(let section, let row):
-      .row(
-        RowID(
-          section: layout.sections[section].day,
-          item: layout.sections[section].rows[row].element.id))
-    }
-  }
-
-  /// 一块中性高亮 = 透镜的底：按前缀和定位，在行间滑动（不用 matchedGeometryEffect：行离开可见区附近就被拿掉，跟着它会跳）
-  @ViewBuilder private func highlight(layout: ListLayout, selected: ClipItem?) -> some View {
-    if let selected, let offset = layout.offset(of: selected.id) {
-      let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
-      let height = layout.height(of: selected.id)
-      if model.multiSelection.isEmpty {
-        shape.fill(Style.selectedFill)
-          // 降低透明度：透镜底提到 0.9 不透明（Whisker §7），不透出后面的材质（只在 15；26 的玻璃自己变实）
-          .background {
-            if Style.opaqueUnderlay(reduceTransparency: reduceTransparency) {
-              shape.fill(Color(nsColor: .windowBackgroundColor).opacity(0.9))
-            }
-          }
-          .overlay { shape.contrastSelectionBorder() }
-          .frame(height: height)
-          .offset(y: offset)
-      }
-      // 放大预览从透镜长出来（透镜关掉、多选时是选中行那一格）：按同样的前缀和报位置，只报列表可见区里的部分，
-      // 滚出去的不当起点、退回面板。按选中项换一个新视图，一出现就报终点位置（不等高亮滑完），换下去的立刻拿掉
-      // （不跟选中动画淡出：淡出中随滚动还会报旧 id，拿掉时再把新的清成 nil）；
-      // 不交给行去报：行换分组时新旧两行短暂并存，旧行的退场会把新行报的位置冲掉
-      Color.clear
-        .frame(height: height)
-        .onGeometryChange(for: CGRect.self) { proxy in
-          let global = proxy.frame(in: .global)
-          let visible = CGRect(origin: .zero, size: proxy.size)
-            .intersection(proxy.bounds(of: .scrollView) ?? .infinite)
-          return visible.isEmpty ? .null : visible.offsetBy(dx: global.minX, dy: global.minY)
-        } action: { rect in
-          model.cardFrame = rect.isNull ? nil : (selected.id, rect)
-        }
-        .offset(y: offset)
-        .onDisappear { if model.cardFrame?.id == selected.id { model.cardFrame = nil } }
-        .transition(.identity)
-        .id(selected.id)
-    }
-  }
-
-  /// 片段范围第一行：一条虚线的「＋ 新建片段 ⌘N」（片段为空时就只有它，不另画空态）
-  private var newSnippetRow: some View {
-    Button {
-      model.dialog = .newSnippet
-    } label: {
-      HStack(spacing: 10) {
-        Image(systemName: "plus")
-          .font(.system(size: 12, weight: .semibold))
-          .frame(width: 24, height: 24)
-        Text("新建片段").font(.system(size: 13))
-        Text("支持 {date} {time} {clipboard} {cursor} 等").font(.system(size: 11)).foregroundStyle(
-          .tertiary)
-        Spacer(minLength: 8)
-        KeyCap("⌘N")
-      }
-      .foregroundStyle(.secondary)
-      .padding(.horizontal, 10)
-      .frame(height: ClipRowView.height)
-      .background {
-        RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
-          .strokeBorder(.tertiary, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-          .padding(.vertical, 2)
-      }
-      .contentShape(.rect)
-    }
-    .buttonStyle(.plain)
-  }
-
-  /// 一行。身份 = 所在分组（那天的零点）+ 条目（EntryID.row），行上也别再挂 `.id(item.id)`：条目换了分组（旧条目再次复制
-  /// 挪进「今天」）就是删一行再插一行。身份只有条目 id 时旧行会被原样搬过去、之后不再跟着父视图更新：选中和透镜停在
-  /// 搬之前，按前缀和走的高亮对不上行（高亮盖住下面几行、透镜不展开、时间也不刷新）
-  private func clipRow(
-    _ row: (offset: Int, element: ClipItem), selected: ClipItem?, lensOpen: Bool
-  ) -> some View {
-    let (index, item) = row
-    let isSelected = item.id == selected?.id
-    return ClipListRow(
-      item: item, form: model.contentForm(of: item), model: model,
-      shortcutIndex: index < 9 ? index : nil, showsShortcut: shownKeys.contains(.command),
-      isSelected: isSelected, lensOpen: lensOpen && isSelected, groupName: groupBadge(for: item),
-      imageRows: imageRows
-    )
-    // 右键菜单和 ⌘K 同一份动作（体检 B12）；包成视图：菜单打开时才算，不在每次画行时建一遍
-    .contextMenu { ActionContextMenu { model.actions(for: item, targets: [item]) } }
-    .transition(rowTransition)
-  }
-
-  /// 新条目从顶部挤入（图标 pop）、删除缩小淡出。换列表（搜索 / 筛选）那一帧插进来的行不带
-  /// 插入过渡，否则每一行都按「新插入」播一次图标 pop。退场一直是缩小淡出：行的过渡在它插进来那一帧就定了，
-  /// 跟着切成无过渡的话，这些行以后删掉时就没有退场
-  private var rowTransition: AnyTransition {
-    if reduceMotion { return .opacity }
-    return .asymmetric(
-      insertion: model.listMotion == .instant
-        ? .identity
-        : .move(edge: .top).combined(with: .opacity).combined(with: AnyTransition(IconPop())),
-      removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .leading)))
-  }
-
-  private func groupBadge(for item: ClipItem) -> String? {
-    guard model.groupFilter == .all, let id = item.groupID else { return nil }
-    return model.store.groups.first { $0.id == id }?.name
   }
 
   /// 按天分组：今天 / 昨天 / M月d日 / yyyy年M月d日（有搜索词时也是，标题后的数字就是命中条数）。
@@ -567,7 +333,7 @@ struct ClipboardPanelView: View {
           } label: {
             hint("操作", key: "⌘K")
           }
-          .help("全部操作（⌘K 或 →）")
+          .help("全部操作（⌘K）")
           Hairline(vertical: true).frame(height: 16)
         }
         Button("剪贴板设置", systemImage: "gearshape", action: model.openSettings)
@@ -698,263 +464,6 @@ struct ClipboardPanelView: View {
   }
 }
 
-/// 列表几何（前缀和）：行 40（图片行 64）、分组标题 24、透镜按类型的常数（Lens.height）；不量真实尺寸。列表就按它排（只画可见区附近的项，
-/// 上下按它撑开，见 ClipboardPanelView.list），高亮、滚动、吸顶也都从这里算，所以算出来的位置就是画出来的位置
-struct ListLayout {
-  /// 列表里的一项：「新建片段」行、分组标题（第几组）、条目行（第几组的第几行）
-  enum Entry: Equatable {
-    case newSnippet
-    case header(Int)
-    case row(Int, Int)
-  }
-
-  /// 片段范围第一行「新建片段」的高度；0 = 不画这一行（别的范围，或片段范围里搜索 / 筛选没有结果，改画空态）
-  let leading: CGFloat
-  /// 按天分组（有没有搜索词都一样）
-  let sections: [ClipboardPanelView.DaySection]
-  /// 展开透镜的那一行和它的总高
-  let lens: (id: UUID, height: CGFloat)?
-  /// 从上到下的每一项
-  let entries: [Entry]
-  /// 各分组标题的 y（不含四周内缩）：透镜所在分组之后的都往下挪了透镜多出的高度
-  let sectionTops: [CGFloat]
-  /// 每一项的顶（不含四周内缩），比 entries 多一个：最后一个是总高
-  private let tops: [CGFloat]
-  /// 条目 id → 它在 entries 里的下标
-  private let rowIndex: [UUID: Int]
-
-  /// imageRows：设置「列表里直接显示图片」开着（图片行 64）
-  init(
-    leading: CGFloat = 0, sections: [ClipboardPanelView.DaySection],
-    lens: (id: UUID, height: CGFloat)?, imageRows: Bool = false
-  ) {
-    self.leading = leading
-    self.sections = sections
-    self.lens = lens
-    var entries: [Entry] = []
-    var tops: [CGFloat] = []
-    var sectionTops: [CGFloat] = []
-    var rowIndex: [UUID: Int] = [:]
-    var y: CGFloat = 0
-    if leading > 0 {
-      entries.append(.newSnippet)
-      tops.append(0)
-      y = leading
-    }
-    for (section, day) in sections.enumerated() {
-      entries.append(.header(section))
-      tops.append(y)
-      sectionTops.append(y)
-      y += ClipboardPanelView.headerHeight
-      for (row, entry) in day.rows.enumerated() {
-        rowIndex[entry.element.id] = entries.count
-        entries.append(.row(section, row))
-        tops.append(y)
-        if let lens, lens.id == entry.element.id {
-          y += lens.height
-        } else {
-          y += ClipRowView.height(of: entry.element, imageRows: imageRows)
-        }
-      }
-    }
-    tops.append(y)
-    self.entries = entries
-    self.sectionTops = sectionTops
-    self.tops = tops
-    self.rowIndex = rowIndex
-  }
-
-  /// 总高（不含四周内缩）
-  var totalHeight: CGFloat { tops[tops.count - 1] }
-
-  /// 第 index 项的顶（不含四周内缩）；index == entries.count 是总高
-  func top(of index: Int) -> CGFloat { tops[index] }
-
-  /// 这一行（展开透镜的就是透镜）的高：相邻两项的顶相减
-  func height(of id: UUID) -> CGFloat {
-    rowIndex[id].map { tops[$0 + 1] - tops[$0] } ?? ClipRowView.height
-  }
-
-  /// 行顶在列表内容里的 y（不含四周内缩）
-  func offset(of id: UUID) -> CGFloat? {
-    rowIndex[id].map { tops[$0] }
-  }
-
-  /// 这一段项涉及的分组（第一项和最后一项所在的组，「新建片段」算第一组）；没有分组时 nil
-  func sections(in range: Range<Int>) -> ClosedRange<Int>? {
-    guard !sections.isEmpty, !range.isEmpty else { return nil }
-    func section(_ index: Int) -> Int {
-      switch entries[index] {
-      case .newSnippet: 0
-      case .header(let section), .row(let section, _): section
-      }
-    }
-    return section(range.lowerBound)...section(range.upperBound - 1)
-  }
-
-  /// 滚动位置落在第 band 段时要画的项（ListWindow：上下各多画一些，可见区最高 maxListHeight）
-  func window(band: Int) -> Range<Int> {
-    ListWindow.range(
-      tops, band: band, inset: ClipboardPanelView.inset,
-      // 按拖得最高的那么多行算：多画几行不碍事，省得每次读设置
-      viewport: ClipboardPanelView.maxListHeight(rows: ClipboardPanelView.rowRange.upperBound))
-  }
-}
-
-/// 列表的一行 + 选中时展开的透镜。整行是一个按钮（单击选中、双击粘贴，或按设置点一下就粘贴：model.click），透镜里的值胶囊、「美化」是里面的小按钮
-private struct ClipListRow: View {
-  let item: ClipItem
-  let form: ContentForm?
-  let model: ClipboardPanelModel
-  let shortcutIndex: Int?
-  let showsShortcut: Bool
-  let isSelected: Bool
-  let lensOpen: Bool
-  let groupName: String?
-  /// 设置「列表里直接显示图片」：图片条目画成图片行
-  let imageRows: Bool
-  @State private var hovered = false
-  /// 这次按下已经起了拖放会话（手势结束或被 AppKit 接走后自动复位）
-  @GestureState private var dragging = false
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  var body: some View {
-    Button {
-      model.click(item)
-    } label: {
-      let picture = imageRows && item.kind == .image
-      VStack(alignment: .leading, spacing: 0) {
-        ClipRowView(
-          item: item, form: form, query: model.query, shortcutIndex: shortcutIndex,
-          showsShortcut: showsShortcut,
-          isChecked: model.multiSelection.isEmpty ? nil : model.multiSelection.contains(item.id),
-          groupName: groupName, images: model.store.images, picture: picture,
-          expanded: picture && lensOpen
-        )
-        // 悬停只出 fill.hover，不移动透镜（选中行下面已经有高亮）
-        .background(
-          hovered && !isSelected ? Style.hoverFill : .clear,
-          in: .rect(cornerRadius: Style.Radius.card, style: .continuous))
-        if lensOpen {
-          LensView(item: item, form: form, model: model, imageRows: imageRows)
-            .transition(lensTransition)
-        }
-      }
-      .frame(
-        height: lensOpen
-          ? Lens.height(for: item, form: form, imageRows: imageRows)
-          : ClipRowView.height(of: item, imageRows: imageRows),
-        alignment: .top
-      )
-      .clipped()
-      .contentShape(.rect)
-    }
-    .buttonStyle(.plain)
-    // 拖到别的 App（体检 D3）：拖开 6 pt 就起 AppKit 会话（ClipDrag），之后的鼠标事件归它；不改选中。
-    // 放成了照常收起面板（固定着不收）
-    .simultaneousGesture(
-      DragGesture(minimumDistance: 6).updating($dragging) { _, started, _ in
-        guard !started else { return }
-        started = true
-        ClipDrag.begin(
-          model.dragItems(for: item),
-          previews: [ClipDrag.preview(item, form: form, images: model.store.images)]
-        ) { [model] in if !model.isPinned { model.hidePanel() } }
-      }
-    )
-    .background {
-      HoverTracker { inside in withAnimation(.easeOut(duration: 0.10)) { hovered = inside } }
-    }
-    .accessibilityElement(children: .combine)
-    .accessibilityAddTraits(isSelected ? .isSelected : [])
-    .accessibilityValue(lensOpen ? Lens.accessibilityValue(for: item, form: form) : "")
-    .accessibilityAction(named: "粘贴") { model.paste([item]) }
-    .accessibilityAction(named: "放大预览") {
-      model.select(item)
-      model.toggleQuickLook()
-    }
-    .accessibilityAction(named: item.favorite ? "取消收藏" : "收藏") {
-      model.toggleFavorite([item.id])
-    }
-  }
-
-  /// 透镜换内容：opacity + y 4→0（≤ 0.18 s）；连发、换列表、减弱动态效果时瞬间展开收起
-  private var lensTransition: AnyTransition {
-    guard !reduceMotion, model.selectionMotion != .instant else { return .identity }
-    return .asymmetric(
-      insertion: .opacity.combined(with: .offset(y: 4)).animation(.easeOut(duration: 0.16)),
-      removal: .opacity.animation(.easeIn(duration: Style.fadeOut)))
-  }
-}
-
-/// 列表行的身份：所在分组（那天的零点）+ 条目（见 rows(_:in:selected:lensOpen:)）
-private struct RowID: Hashable {
-  let section: Date
-  let item: UUID
-}
-
-/// ForEach 的身份（list）：「新建片段」、分组标题（那一天）、行（所在分组 + 条目）
-private enum EntryID: Hashable {
-  case newSnippet
-  case header(Date)
-  case row(RowID)
-}
-
-/// 分组标题「今天 · 12」+ 一条发丝线。高度必须正好是 headerHeight：高亮、滚动、吸顶都按它累加。
-/// 吸顶时加材质底，平时没有灰条
-private struct SectionHeader: View {
-  let section: ClipboardPanelView.DaySection
-  var pinned = false
-
-  var body: some View {
-    HStack(spacing: 8) {
-      Text("\(section.title) · \(section.rows.count)")
-        .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(.tertiary)
-      Hairline()
-    }
-    .padding(.horizontal, 10)
-    .frame(height: ClipboardPanelView.headerHeight)
-    .background(pinned ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(.clear))
-  }
-}
-
-/// 吸顶的分组标题（同系统列表）：哪一组的标题滚过了列表顶，就把它停在顶上（材质底），下一组的标题顶上来时把它推上去。
-/// 放在滚动内容里（叠在列表外面会挡住滚动条，2026-10-03 用户指出），每一组的位置按几何每帧算（visualEffect，不重画面板）：
-/// 停在可见区的顶，夹在它自己标题的位置和下一组标题上面一格之间；没滚过自己的标题时透明（列表里那条在原处）。
-/// 只画 shown 这几组（画出来的那一段涉及的组，可见区顶上那组一定在里面）
-private struct StickyHeaders: View {
-  let sections: [ClipboardPanelView.DaySection]
-  /// 各组标题的顶（列表坐标），最后多一个总高：第 k 组吸顶时夹在 bounds[k] 和 bounds[k + 1] − 标题高之间
-  let bounds: [CGFloat]
-  let shown: ClosedRange<Int>
-
-  var body: some View {
-    let header = ClipboardPanelView.headerHeight
-    ZStack(alignment: .top) {
-      ForEach(Array(shown), id: \.self) { k in
-        let (top, bottom) = (bounds[k], bounds[k + 1] - header)
-        SectionHeader(section: sections[k], pinned: true)
-          .visualEffect { content, proxy in
-            // 这一层的顶就是列表的顶：它在滚动视图里往上出去多少，可见区的顶就在列表坐标的多少
-            let visible = -proxy.frame(in: .scrollView).minY
-            return content.offset(y: min(max(visible, top), bottom))
-              .opacity(visible > top + 0.5 ? 1 : 0)
-          }
-      }
-    }
-    // 不接点击（点在吸顶标题上照常点到下面那一行）；旁白读列表里那一条
-    .allowsHitTesting(false)
-    .accessibilityHidden(true)
-  }
-}
-
-/// 透镜移动的动画触发值：选中换了、或透镜开关变了（多选时收起）
-private struct LensKey: Equatable {
-  let id: UUID?
-  let isOpen: Bool
-}
-
 /// 搜索框里的粉色筛选标签：高 22、12 medium、品牌粉 0.12 底 + brandInk 字（⌫ 待删时 0.30 底），尾部 8 pt ×（字到 × 6）。
 /// 点标签打开筛选面板，点 × 移除
 private struct TokenChip: View {
@@ -993,17 +502,5 @@ private struct TokenChip: View {
     .accessibilityAddTraits(.isButton)
     .accessibilityAction { open() }
     .accessibilityAction(named: "移除", remove)
-  }
-}
-
-/// 标签移除 = 宽度收拢（settle，跟着搜索线 HStack 的动画走）：遮罩从右往左收到 0 + 淡出，
-/// 被移除的标签不占布局，输入框同时滑过来，收拢的右边缘走在它前面，不叠在一起
-private struct TokenCollapse: Transition {
-  func body(content: Content, phase: TransitionPhase) -> some View {
-    content
-      .mask(alignment: .leading) {
-        Rectangle().scaleEffect(x: phase.isIdentity ? 1 : 0.01, anchor: .leading)
-      }
-      .opacity(phase.isIdentity ? 1 : 0)
   }
 }

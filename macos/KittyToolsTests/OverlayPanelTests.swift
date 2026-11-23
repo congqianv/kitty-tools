@@ -66,6 +66,21 @@ struct OverlayPanelTests {
   /// contentView 多出 / 少了一次改动量（变高 100 → 260 得 420，变矮 260 → 150 得 40：内容上下被裁），order 时玻璃底的
   /// 约束还会把窗口改成过时的高度（412 收起、变 172 再 order，窗口停在 250）。排版直接调 layoutIfNeeded（order 里也是它）；
   /// order 那段放在屏外、全透明、不当 key
+  @Test func bottomCardsFitOffsetScreens() {
+    for screen in [
+      NSRect(x: 0, y: 80, width: 1440, height: 800),
+      NSRect(x: -1920, y: -1080, width: 1920, height: 1050),
+      NSRect(x: 1440, y: 900, width: 600, height: 300),
+    ] {
+      for height: CGFloat in [284.5, 324.5, 542.5, 2000] {
+        let frame = OverlayPanel.frame(atBottomOf: screen, height: height)
+        #expect(screen.contains(frame))
+        #expect(frame.minX == screen.minX + 8 && frame.minY == screen.minY + 8)
+        #expect(frame.width == screen.width - 16)
+      }
+    }
+  }
+
   @Test func resizeDuringLayoutWaitsUntilLaidOut() {
     let content = Resizing()
     let panel = OverlayPanel(

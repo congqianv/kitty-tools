@@ -29,6 +29,8 @@
 
 ## 这份包的差异
 
+- 使用 `-Onone` 编译：避开 Xcode 26.6 / Swift 6.3.3 的优化器崩溃。这份包用于功能测试，启动速度、内存、CPU 和体积不代表正式优化版；正式发布配置未改。
+
 - 不含内置智谱翻译密钥。智谱服务需自行填密钥；也可以选择不需要密钥的翻译服务。剪贴板不依赖翻译密钥。
 - 不嵌入访达右键扩展：原实现要求原作者签名才能与 App 通信。此次没有放宽那套校验，不建议在测试版添加访达右键插件。
 - 不支持原版的应用内自动更新。更新测试版时重新下载 Actions 产物。
@@ -37,6 +39,8 @@
 ## English
 
 This personal test build uses the separate name **Kitty Tools Test** and bundle ID `com.yy.kitty-tools.native.test`. Its settings, history and keychain service are separate from the original app.
+
+It is built with Swift optimization disabled (`-Onone`) to avoid a Swift 6.3.3 optimizer crash. Performance and size are not representative of an optimized release.
 
 It is ad-hoc signed, not notarized, and contains no built-in translation API key. The Finder Menu extension is omitted because its communication requires the original developer’s signature. In-app updates from the original project are disabled for this bundle ID.
 

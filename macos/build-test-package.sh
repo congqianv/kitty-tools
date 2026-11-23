@@ -18,12 +18,15 @@ trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$OUT"
 
 # 命令行的空值优先于可选的本地 Secrets.xcconfig；无需生成或读取任何密钥文件。
+# Xcode 26.6 / Swift 6.3.3 在现有 NSHostingView 子类的 EarlyPerfInliner 上崩溃（Actions #1）。
+# 自用包只验证功能，关闭优化；正式 Release 配置不变，后续换编译器后再验证优化构建。
 # 只覆盖 APP_PRODUCT_NAME，不能覆盖 PRODUCT_NAME：后者会把 XPC / 扩展 target 也改成同名。
 xcodebuild archive \
   -project "$M/KittyTools.xcodeproj" -scheme KittyTools -configuration Release \
   -destination 'generic/platform=macOS' -jobs 2 \
   -archivePath "$WORK/KittyTools.xcarchive" -derivedDataPath "$WORK/DerivedData" \
   ARCHS="$ARCH" ONLY_ACTIVE_ARCH=NO \
+  SWIFT_OPTIMIZATION_LEVEL=-Onone \
   APP_PRODUCT_NAME="$NAME" BUNDLE_ID_SUFFIX=.test \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= DEVELOPMENT_TEAM= \
   CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO ZHIPU_BUILTIN_KEY= -quiet
@@ -85,7 +88,7 @@ codesign --verify --deep --strict "$WORK/unpacked/$NAME.app"
 {
   printf 'App: %s\nBundle ID: %s\nVersion: %s\nArchitecture: %s\n' "$NAME" "$TEST_ID" "$VERSION" "$ARCH"
   printf 'Commit: %s\n' "$(git -C "$M" rev-parse HEAD)"
-  printf 'Signing: ad-hoc (no developer certificate, no notarization)\nBuiltin translation key: absent\nFinder extension: omitted\n'
+  printf 'Optimization: -Onone (functional testing only)\nSigning: ad-hoc (no developer certificate, no notarization)\nBuiltin translation key: absent\nFinder extension: omitted\n'
   xcodebuild -version
   xcrun swift --version
 } > "$OUT/BUILD-INFO.txt"

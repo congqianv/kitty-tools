@@ -113,7 +113,7 @@ struct ClipboardCards: NSViewRepresentable {
   /// 拖高时卡片跟着长大，一行始终只放一张卡片的高度，避免 FlowLayout 意外排成两行。
   static func cardSize(in height: CGFloat) -> NSSize {
     let side = max(120, height - 24)
-    return NSSize(width: min(max(side, 180), 320), height: side)
+    return NSSize(width: min(max(side, 260), 380), height: side)
   }
 
   final class Coordinator: NSObject, NSCollectionViewDataSource, NSCollectionViewDelegate {
@@ -285,7 +285,7 @@ private struct ClipboardCard: View {
       model.click(item)
     } label: {
       VStack(alignment: .leading, spacing: 0) {
-        header.padding(12)
+        header.padding(.horizontal, 12).padding(.vertical, 8)
           .background(Style.Family.clipboard.opacity(0.12))
         GeometryReader { geometry in
           content
@@ -294,7 +294,7 @@ private struct ClipboardCard: View {
         }
         .padding(12)
         .layoutPriority(-1)
-        footer.padding(.horizontal, 12).padding(.bottom, 10)
+        footer.padding(.horizontal, 12).padding(.bottom, 8)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .background(Color(nsColor: .controlBackgroundColor), in: shape)

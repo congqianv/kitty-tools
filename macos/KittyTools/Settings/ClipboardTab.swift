@@ -17,7 +17,6 @@ struct ClipboardTab: View {
   @AppStorage(Prefs.clipboardImageRows) private var imageRows = true
   @AppStorage(Prefs.clipboardLinkPreview) private var linkPreview = true
   @AppStorage(Prefs.clipboardPasteOnClick) private var pasteOnClick = false
-  @AppStorage(Prefs.clipboardPanelPosition) private var panelPosition = "bottom"
   @AppStorage(Prefs.clipboardPastePlain) private var pastePlain = false
   @AppStorage(Prefs.clipboardImageOCR) private var imageOCR = true
   @AppStorage(Prefs.clipboardBlockSensitive) private var blockSensitive = true
@@ -189,20 +188,11 @@ struct ClipboardTab: View {
           .toggleStyle(.switch)
       }
       .settingsAnchor(.clipboardLinkPreview)
-      SettingRow(
-        title: "面板位置", info: "屏幕底部铺满可见宽度；其他位置可拖左右边改宽度。"
-      ) {
-        Picker("面板位置", selection: $panelPosition) {
-          Text("屏幕底部").tag("bottom")
-          Text("屏幕上方").tag("top")
-          Text("跟随鼠标").tag("mouse")
-          Text("上次位置").tag("last")
-        }
-        .pickerStyle(.segmented)
-      }
-      .settingsAnchor(.clipboardPanelPosition)
+      LabeledContent("面板位置", value: String(localized: "固定在屏幕底部"))
+        .help("面板固定在鼠标所在屏幕底部，不能拖动位置。")
+        .settingsAnchor(.clipboardPanelPosition)
       PanelSizeRow(
-        detail: "拖面板的边改大小", info: "拖顶部调整卡片大小；停靠底部时宽度跟随屏幕。",
+        detail: "拖顶部调整卡片大小", info: "面板宽度跟随屏幕，位置不能拖动。",
         widthKey: Prefs.clipboardPanelWidth,
         heightKey: Prefs.clipboardPanelRows, defaultWidth: ClipboardPanelView.width
       )

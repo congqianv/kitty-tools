@@ -580,7 +580,7 @@ struct ClipboardStoreTests {
     let (store, _) = try makeStore()
     let model = ClipboardPanelModel(store: store)
     let baseline = ClipboardPanelView.height(for: model, banner: false, maxRows: 0)
-    #expect(baseline == 324.5)
+    #expect(baseline == 380.5)
     for index in 0..<100 { store.record(text("条目 \(index)")) }
     model.select(store.items[50])
     #expect(ClipboardPanelView.height(for: model, banner: false, maxRows: 0) == baseline)
@@ -591,7 +591,7 @@ struct ClipboardStoreTests {
     #expect(ClipboardPanelView.height(for: model, banner: false, maxRows: 0) >= baseline)
     model.palette = nil
     model.dialog = .newSnippet
-    #expect(ClipboardPanelView.height(for: model, banner: true, maxRows: 0) == 542.5)
+    #expect(ClipboardPanelView.height(for: model, banner: true, maxRows: 0) == 506.5)
     model.dialog = nil
     #expect(ClipboardPanelView.height(for: model, banner: false, maxRows: 0) == baseline)
   }
@@ -622,7 +622,7 @@ struct ClipboardStoreTests {
     window: NSWindow, close: () -> Void
   ) {
     let window = NSWindow(
-      contentRect: NSRect(x: -20000, y: -20000, width: ClipboardPanelView.width, height: 324.5),
+      contentRect: NSRect(x: -20000, y: -20000, width: ClipboardPanelView.width, height: 380.5),
       styleMask: [.borderless], backing: .buffered, defer: false)
     let suite = "kitty-lens-test-\(UUID().uuidString)"
     let prefs = try #require(UserDefaults(suiteName: suite))

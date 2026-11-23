@@ -1,4 +1,4 @@
-// 剪贴板卡片面板：顶部胶囊搜索与筛选，横向复用的内容卡片，底栏保留多选和操作入口。
+// 剪贴板卡片面板：顶部胶囊搜索、筛选和操作，下面只放横向复用的内容卡片。
 // 数据、搜索、片段展开、撤销和粘贴都交给 ClipboardPanelModel；窗口仍用不激活前台的 OverlayPanel。
 // 高度与条数、当前选中项无关；顶部拖边改变卡片大小，菜单和编辑对话框打开时临时扩高。
 
@@ -20,27 +20,29 @@ struct ClipboardPanelView: View {
   @AppStorage(Prefs.clipboardImageRows) private var imageRows = true
   /// 沿用旧的大小偏好：0 = 默认卡片大小。
   @AppStorage(Prefs.clipboardPanelRows) private var maxRows = 0.0
-  /// 默认粘贴为纯文本：底栏按住 ⌥ 的提示、右键菜单的替代粘贴跟着换名字
+  /// 默认粘贴为纯文本：顶部状态区按住 ⌥ 的提示、右键菜单的替代粘贴跟着换名字
   @AppStorage(Prefs.clipboardPastePlain) private var pastesPlain = false
   @State private var trusted = Permissions.isAccessibilityTrusted
   /// 正按着的 ⌘ / ⌥
   @State private var heldKeys: EventModifiers = []
-  /// 按住超过 150 ms 才算「按住」（S4）：⌘ 亮出 ⌘1–9 键帽，⌘ / ⌥ 把底栏左边换成对应的替代动作。
-  /// 按 ⌘K、⌘D 这类组合键时一闪而过的 ⌘ 不换，底栏不闪；松开立刻收
+  /// 按住超过 150 ms 才算「按住」（S4）：⌘ 亮出 ⌘1–9 键帽，⌘ / ⌥ 把顶部状态区左边换成对应的替代动作。
+  /// 按 ⌘K、⌘D 这类组合键时一闪而过的 ⌘ 不换，顶部状态区不闪；松开立刻收
   @State private var shownKeys: EventModifiers = []
-  /// 多选底栏「收藏夹…」按钮的左缘（面板坐标）：收藏夹列表锚在它上方
-  @State private var groupsButtonX: CGFloat = 0
+  /// 菜单锚点来自按钮的实际位置，不假定搜索栏居中或窗口宽度固定。
+  @State private var filterButtonFrame = CGRect.zero
+  @State private var actionsButtonFrame = CGRect.zero
+  @State private var groupsButtonFrame = CGRect.zero
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   /// 截图自检和非停靠位置的默认宽度；停靠时按当前屏幕可见宽度铺开。
   static let width: CGFloat = 1100
   static let searchHeight: CGFloat = 56
-  static let barHeight: CGFloat = 36
+  static let statusHeight: CGFloat = 32
   static let bannerHeight: CGFloat = 30
   /// 浮起菜单距面板边缘的最小留白。
   static let inset: CGFloat = 6
   /// 默认卡片区高度（包含卡片四周留白）。
-  static let maxListHeight: CGFloat = 232
+  static let maxListHeight: CGFloat = 324
   /// 沿用旧版大小档位，避免改动同步 / 导出格式；每档对应 20 pt。
   static let rowRange = 6.5...14.5
 
@@ -51,9 +53,9 @@ struct ClipboardPanelView: View {
       : maxListHeight
   }
 
-  /// 面板里列表区以外的高度：搜索栏、发丝线、授权横幅、底栏
+  /// 面板里列表区以外的高度：搜索栏、发丝线、授权横幅、顶部状态区
   static func chrome(banner: Bool) -> CGFloat {
-    searchHeight + 0.5 + (banner ? bannerHeight : 0) + barHeight
+    searchHeight + 0.5 + (banner ? bannerHeight : 0)
   }
 
   /// 顶部拖边可调整的高度范围，沿用旧版大小档位。
@@ -69,60 +71,43 @@ struct ClipboardPanelView: View {
   }
   /// 筛选面板 / ⌘K 开着时列表区至少这么高（8.5 行菜单 + 上下余量），短列表时面板先长到放得下
   static let paletteListHeight: CGFloat = ActionMenu.rowHeight * 8.5 + 26
-  /// 面板根视图的坐标系（多选底栏按钮报位置用）
+  /// 面板根视图的坐标系（多选顶部状态区按钮报位置用）
   nonisolated private static let space = "clipboardPanel"
 
   var body: some View {
     let items = model.visibleItems
     let selected = model.selectedItem(in: items)
     VStack(spacing: 0) {
-      searchBar
+      header(count: items.count)
       Hairline()
       if !trusted { permissionBanner }
       cardArea(items, selected: selected)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay { DialogOverlay(model: model) }
-      bottomBar(count: items.count)
     }
     .overlay(alignment: .topLeading) {
-      if model.palette == .filters {
-        ActionMenu(
-          items: model.filteredActions, selection: model.actionSelection,
-          emptyText: "没有匹配的筛选", anchor: .topLeading, maxRows: 8.5,
-          onHover: { model.actionSelection = $0 }, onRun: model.run
-        )
-        .padding(.leading, 12)
-        .padding(.top, 60 + (trusted ? 0 : Self.bannerHeight))
-      }
-    }
-    .overlay(alignment: .bottomTrailing) {
-      if model.palette == .actions {
-        ActionMenu(
-          items: model.filteredActions, selection: model.actionSelection,
-          emptyText: model.submenuTitle == nil ? "没有匹配的操作" : "没有匹配的收藏夹",
-          header: model.submenuTitle, onBack: model.leaveSubmenu, maxRows: 8.5,
-          onHover: { model.actionSelection = $0 }, onRun: model.run
-        )
-        // 右缘对着底栏「操作 ⌘K」的键帽：右内边距 16 + 图钉 + 齿轮 + 竖线和间距
-        .padding(.trailing, 82)
-        .padding(.bottom, Self.barHeight + 4)
-      }
-    }
-    // 多选底栏「收藏夹…」：锚在按钮上方（左缘对齐，放不下时往左挪）
-    .overlay(alignment: .bottomLeading) {
-      if model.palette == .groups {
-        ActionMenu(
-          items: model.filteredActions, selection: model.actionSelection,
-          emptyText: "没有匹配的收藏夹", anchor: .bottomLeading, maxRows: 8.5,
-          onHover: { model.actionSelection = $0 }, onRun: model.run
-        )
-        .padding(
-          .leading,
-          min(
-            max(groupsButtonX - 8, Self.inset),
-            max(groupsButtonX, 720) - ActionMenu.width - Self.inset)
-        )
-        .padding(.bottom, Self.barHeight + 4)
+      GeometryReader { geometry in
+        if let palette = model.palette {
+          let button =
+            palette == .filters
+            ? filterButtonFrame
+            : palette == .actions ? actionsButtonFrame : groupsButtonFrame
+          let below =
+            Self.chrome(banner: !trusted)
+            + (showsStatus(count: items.count) ? Self.statusHeight : 0)
+          let origin = Self.menuOrigin(
+            button: button, panelWidth: geometry.size.width, below: below)
+          ActionMenu(
+            items: model.filteredActions, selection: model.actionSelection,
+            emptyText: palette == .filters
+              ? "没有匹配的筛选"
+              : palette == .groups || model.submenuTitle != nil ? "没有匹配的收藏夹" : "没有匹配的操作",
+            header: palette == .actions ? model.submenuTitle : nil,
+            onBack: model.leaveSubmenu, anchor: .topTrailing, maxRows: 8.5,
+            onHover: { model.actionSelection = $0 }, onRun: model.run
+          )
+          .offset(x: origin.x, y: origin.y)
+        }
       }
     }
     .animation(
@@ -130,7 +115,9 @@ struct ClipboardPanelView: View {
       value: model.palette
     )
     .onChange(
-      of: Self.height(for: model, banner: !trusted, maxRows: maxRows),
+      of: Self.height(
+        for: model, banner: !trusted, maxRows: maxRows,
+        showsModifiers: !shownKeys.isEmpty && !items.isEmpty),
       initial: true
     ) { _, height in model.resize(height) }
     .onModifierKeysChanged(mask: [.command, .option]) { _, keys in heldKeys = keys }
@@ -157,11 +144,52 @@ struct ClipboardPanelView: View {
     showsLens: Bool = UserDefaults.standard.bool(forKey: Prefs.clipboardShowPreview),
     banner: Bool = !Permissions.isAccessibilityTrusted,
     maxRows: Double = UserDefaults.standard.double(forKey: Prefs.clipboardPanelRows),
-    imageRows: Bool = UserDefaults.standard.bool(forKey: Prefs.clipboardImageRows)
+    imageRows: Bool = UserDefaults.standard.bool(forKey: Prefs.clipboardImageRows),
+    showsModifiers: Bool = false
   ) -> CGFloat {
     let content = maxListHeight(rows: maxRows)
     let minimum: CGFloat = model.dialog != nil ? 420 : model.palette != nil ? paletteListHeight : 0
-    return chrome(banner: banner) + max(content, minimum)
+    let status: CGFloat =
+      model.toast != nil || !model.multiSelection.isEmpty || showsModifiers
+      ? statusHeight : 0
+    return chrome(banner: banner) + status + max(content, minimum)
+  }
+
+  /// 菜单的右缘跟着触发按钮，且不越过面板两侧；始终在搜索 / 操作区下面。
+  static func menuOrigin(button: CGRect, panelWidth: CGFloat, below: CGFloat) -> CGPoint {
+    CGPoint(
+      x: min(
+        max(button.maxX - ActionMenu.width, inset),
+        max(inset, panelWidth - ActionMenu.width - inset)),
+      y: max(button.maxY + 6, below + 4))
+  }
+
+  private func showsStatus(count: Int) -> Bool {
+    model.toast != nil || !model.multiSelection.isEmpty || (count > 0 && !shownKeys.isEmpty)
+  }
+
+  private func header(count: Int) -> some View {
+    VStack(spacing: 0) {
+      HStack(spacing: 12) {
+        searchBar.frame(minWidth: 180, maxWidth: .infinity)
+        if !showsStatus(count: count) {
+          barStatus(count: count).fixedSize(horizontal: true, vertical: false)
+            .font(.system(size: 11)).foregroundStyle(.secondary)
+        }
+        actionButtons(count: count).fixedSize(horizontal: true, vertical: false)
+      }
+      .padding(.horizontal, 16)
+      .frame(height: Self.searchHeight)
+      if showsStatus(count: count) {
+        ScrollView(.horizontal, showsIndicators: false) {
+          barStatus(count: count)
+            .disabled(model.dialog != nil && model.toast == nil)
+            .font(.system(size: 12)).foregroundStyle(.secondary).buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .frame(height: Self.statusHeight)
+      }
+    }
   }
 
   // MARK: 搜索线
@@ -197,11 +225,15 @@ struct ClipboardPanelView: View {
       .help("筛选范围、收藏夹、类型、来源")
       .accessibilityLabel("筛选范围、收藏夹、类型、来源")
       .accessibilityAddTraits(model.palette == .filters ? .isSelected : [])
+      .onGeometryChange(for: CGRect.self) {
+        $0.frame(in: .named(Self.space))
+      } action: {
+        filterButtonFrame = $0
+      }
       .disabled(model.dialog != nil)
     }
-    .padding(.horizontal, 20)
     .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: tokens.map(\.id))
-    .frame(height: Self.searchHeight)
+    .frame(height: 36)
   }
 
   private var searchSymbol: String {
@@ -302,22 +334,13 @@ struct ClipboardPanelView: View {
     }
   }
 
-  // MARK: 底栏
+  // MARK: 顶部操作
 
-  private func bottomBar(count: Int) -> some View {
+  private func actionButtons(count: Int) -> some View {
     HStack(spacing: 12) {
-      // 左边先分宽度（英文的动词长：不先分的话 HStack 只给它剩下的一半，还有空也被截断）；中文本来就放得下，样子不变
-      barStatus(count: count)
-        .layoutPriority(1)
-        .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
-        .id(barState(count: count))
-        // 对话框开着时只有「撤销」能点（管理收藏夹里删掉的收藏夹）；多选动词里的粘贴会收起面板、丢掉没保存的字
-        .disabled(model.dialog != nil && model.toast == nil)
-      // 有新版本：条数后面常驻「更新到 x」；提示、多选动词、按住修饰键的替代动作出来时让开
       if barState(count: count) == "count" {
         UpdateBarHint { model.hidePanel() }.disabled(model.dialog != nil)
       }
-      Spacer(minLength: 8)
       Group {
         if count > 0 {
           if model.multiSelection.isEmpty {
@@ -334,12 +357,17 @@ struct ClipboardPanelView: View {
             hint("操作", key: "⌘K")
           }
           .help("全部操作（⌘K）")
+          .onGeometryChange(for: CGRect.self) {
+            $0.frame(in: .named(Self.space))
+          } action: {
+            actionsButtonFrame = $0
+          }
           Hairline(vertical: true).frame(height: 16)
         }
         Button("剪贴板设置", systemImage: "gearshape", action: model.openSettings)
           .labelStyle(.iconOnly)
           .help("剪贴板设置（⌘,）")
-        // 固定只管点外面不收起（Esc、⌘W 照样关）；和 ⌘P 同一个开关，底栏就地提示
+        // 固定只管点外面不收起（Esc、⌘W 照样关）；和 ⌘P 同一个开关，顶部状态区就地提示
         Button(
           hideOnUnfocus ? "固定面板" : "取消固定", systemImage: hideOnUnfocus ? "pin" : "pin.fill",
           action: model.togglePinned
@@ -350,22 +378,14 @@ struct ClipboardPanelView: View {
         .help(hideOnUnfocus ? "固定面板（⌘P）" : "取消固定（⌘P）")
         .accessibilityAddTraits(hideOnUnfocus ? [] : .isSelected)
       }
-      // 对话框开着时右边不接点击：点「粘贴」会收起面板、丢掉对话框里没保存的字，点「操作」会在对话框上面弹 ⌘K
       .disabled(model.dialog != nil)
     }
-    .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: barState(count: count))
     .font(.system(size: 12))
-    // 整条默认 secondary（条数、「已选 N 条」、「⌘1–9 直接粘贴」这些状态和键位提示）；能点的动词在 hint 里单独给 primary
-    // （mac-whisker §3「面板里共用的几件」）
     .foregroundStyle(.secondary)
     .buttonStyle(.plain)
-    // 左右 16 = 列表四周内缩 6 + 行内边距 10：和行图标、行右缘共用左右边线
-    .padding(.horizontal, 16)
-    .frame(height: Self.barHeight)
-    .overlay(alignment: .top) { Hairline() }
   }
 
-  /// 底栏左边现在显示哪一种（换的时候 blurReplace）
+  /// 顶部状态区左边现在显示哪一种（换的时候 blurReplace）
   private func barState(count: Int) -> String {
     if let toast = model.toast { return "toast \(toast)" }
     if !model.multiSelection.isEmpty { return "multi" }
@@ -410,7 +430,7 @@ struct ClipboardPanelView: View {
     }
   }
 
-  /// 多选时底栏左边：一排「动词 + 键帽」按钮；对象是勾选项里看得见的（model.targets，搜索 / 筛选换了列表后不算看不见的）。
+  /// 多选时顶部状态区左边：一排「动词 + 键帽」按钮；对象是勾选项里看得见的（model.targets，搜索 / 筛选换了列表后不算看不见的）。
   /// 「收藏夹…」打开收藏夹列表（ActionMenu，和 ⌘K 的「移到收藏夹」子列表同一份）
   @ViewBuilder private var multiSelectVerbs: some View {
     let items = model.targets
@@ -429,10 +449,10 @@ struct ClipboardPanelView: View {
       } label: {
         Text("收藏夹…").foregroundStyle(.primary).contentShape(.rect)
       }
-      .onGeometryChange(for: CGFloat.self) {
-        $0.frame(in: .named(Self.space)).minX
+      .onGeometryChange(for: CGRect.self) {
+        $0.frame(in: .named(Self.space))
       } action: {
-        groupsButtonX = $0
+        groupsButtonFrame = $0
       }
       .accessibilityAddTraits(model.palette == .groups ? .isSelected : [])
       Button(action: { model.delete(ids) }) { hint("删除", key: "⌘⌫", danger: true) }

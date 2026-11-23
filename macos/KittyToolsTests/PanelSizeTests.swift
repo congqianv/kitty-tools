@@ -26,6 +26,20 @@ struct PanelSizeTests {
     #expect(ClipboardPanelView.rows(forHeight: range.upperBound, banner: true) == 14.5)
   }
 
+  @Test func clipboardMenusFollowButtonsAndStayInsidePanel() {
+    let button = CGRect(x: 650, y: 12, width: 32, height: 32)
+    let origin = ClipboardPanelView.menuOrigin(button: button, panelWidth: 1100, below: 56.5)
+    #expect(origin.x + ActionMenu.width == button.maxX)
+    #expect(origin.y == 60.5)
+    let small = ClipboardPanelView.menuOrigin(button: button, panelWidth: 600, below: 88.5)
+    #expect(small.x + ActionMenu.width <= 594 && small.y == 92.5)
+    let leading = ClipboardPanelView.menuOrigin(
+      button: CGRect(x: 10, y: 0, width: 32, height: 32), panelWidth: 600, below: 56.5)
+    #expect(leading.x == ClipboardPanelView.inset)
+    let card = ClipboardCards.cardSize(in: ClipboardPanelView.maxListHeight)
+    #expect(card.width >= 280 && card.height >= 280)
+  }
+
   @Test func launcherRowsFollowTheDraggedHeight() throws {
     let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
     let range = LauncherPanelView.heightRange(for: model)

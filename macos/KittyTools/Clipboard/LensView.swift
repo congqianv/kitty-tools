@@ -144,14 +144,13 @@ struct LensView: View {
         Text(highlighted(item.text ?? ""))
           .font(.system(size: 13))
           .lineSpacing(3)
-          .lineLimit(2)
           // 给具体的颜色，同下面的长文本：层级色的字贴着裁切区的边时在截图自检里画成白的（clip-lens-wrapped），见 Lens.ink
           .foregroundStyle(Lens.ink)
       } else {
         let text = String((item.text ?? "").prefix(20_000))
         let shown =
-          Search.excerpt(of: text, query: model.query, before: 40, after: 600)
-          ?? String(text.prefix(640))
+          Search.excerpt(of: text, query: model.query, before: 40, after: 1000)
+          ?? String(text.prefix(1040))
         Text(highlighted(shown))
           .font(.system(size: 13))
           .lineSpacing(3)
@@ -276,7 +275,7 @@ private struct CodeLens: View {
       Search.firstHit(in: source, query: query).map {
         max(0, source[..<$0.lowerBound].count(where: { $0 == "\n" }) - 1)
       } ?? 0
-    let shown = lines[first..<min(first + 10, lines.count)].map { String($0.prefix(300)) }
+    let shown = lines[first..<min(first + 16, lines.count)].map { String($0.prefix(300)) }
     let colored = SyntaxHighlight.attributed(
       shown.joined(separator: "\n"), language: json ? .json : .code,
       font: .monospacedSystemFont(ofSize: 12, weight: .regular))

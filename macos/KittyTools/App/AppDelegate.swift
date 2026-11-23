@@ -712,9 +712,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let panel = OverlayPanel(
       size: NSSize(
         width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
-      minSize: NSSize(
-        width: Style.listPanelWidths.lowerBound, height: ClipboardPanelView.searchHeight),
-      frameName: "ClipboardPanel", topAnchored: true, autoHide: .clickOutside,
+      autoHide: .clickOutside,
       isPinned: { !UserDefaults.standard.bool(forKey: Prefs.clipboardHideOnUnfocus) },
       content: AnyView(ClipboardPanelView(model: model).environment(updater)))
     panel.keyEquivalentHandler = { [unowned model] in model.handleKeyEquivalent($0) }
@@ -727,7 +725,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.resize = { [unowned panel] in panel.setContentHeight($0, animated: true) }
     panel.maxSize = NSSize(
       width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-    panel.widthKey = Prefs.clipboardPanelWidth
+    panel.isMovable = false
+    panel.isMovableByWindowBackground = false
     panel.resizesFromTop = true
     panel.docksToBottom = true
     panel.heightRange = {

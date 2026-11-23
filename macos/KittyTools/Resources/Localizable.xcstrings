@@ -1,6 +1,46 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "面板宽度跟随屏幕，位置不能拖动。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The panel follows the screen width. Its position cannot be dragged."
+          }
+        }
+      }
+    },
+    "拖顶部调整卡片大小" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag the top edge to resize cards"
+          }
+        }
+      }
+    },
+    "面板固定在鼠标所在屏幕底部，不能拖动位置。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The panel stays at the bottom of the screen under the pointer and cannot be moved by dragging."
+          }
+        }
+      }
+    },
+    "固定在屏幕底部" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fixed at the Bottom of the Screen"
+          }
+        }
+      }
+    },
     "全部操作（⌘K）" : {
       "localizations" : {
         "en" : {

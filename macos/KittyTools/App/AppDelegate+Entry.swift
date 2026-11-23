@@ -17,20 +17,8 @@ extension AppDelegate {
       noteCapture?.panel.hide()
     }
     if !clipboardPanel.isVisible { clipboardStore.enforceLimits() }
-    // 未设置位置时停靠底部；显式选过跟随鼠标 / 上次位置 / 屏幕上方的继续尊重。
-    let position = UserDefaults.standard.string(forKey: Prefs.clipboardPanelPosition) ?? "bottom"
-    clipboardPanel.docksToBottom = position == "bottom"
-    if !clipboardPanel.isVisible && !clipboardPanel.docksToBottom {
-      let stored = UserDefaults.standard.double(forKey: Prefs.clipboardPanelWidth)
-      let width = stored > 0 ? CGFloat(stored) : ClipboardPanelView.width
-      let visible = NSScreen.containing(NSEvent.mouseLocation)?.visibleFrame
-      var frame = clipboardPanel.frame
-      frame.size.width = min(width, max(0, (visible?.width ?? width + 16) - 16))
-      clipboardPanel.move(to: frame, animated: false)
-    }
-    let place = OverlayPanel.placement(
-      position, hasUserFrame: clipboardPanel.hasUserFrame, mouse: NSEvent.mouseLocation)
-    clipboardPanel.toggle(anchor: place.anchor, atTop: place.atTop)
+    // 固定在鼠标所在屏幕底部，不读取旧版拖动位置或宽度。
+    clipboardPanel.toggle()
   }
 
   func toggleLauncher() {

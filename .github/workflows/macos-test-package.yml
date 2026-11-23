@@ -1,0 +1,91 @@
+# 自用测试包：没有证书、Secrets 或发布权限；首次推送测试分支也会运行。
+name: macOS 自用测试包
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: 源码分支或提交（必须包含 macos/）
+        required: true
+        default: codex/clipboard-cards
+        type: string
+      architecture:
+        description: 芯片架构
+        required: true
+        default: arm64
+        type: choice
+        options:
+          - arm64
+          - x86_64
+  push:
+    branches:
+      - codex/clipboard-cards
+    paths:
+      - .github/workflows/macos-test-package.yml
+      - macos/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-test-${{ github.ref }}-${{ inputs.architecture || 'arm64' }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      ARCH: ${{ inputs.architecture || 'arm64' }}
+    steps:
+      - name: 获取测试源码
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
+          persist-credentials: false
+
+      - name: 检查构建环境
+        shell: bash
+        run: |
+          test -f macos/KittyTools.xcodeproj/project.pbxproj
+          test -f macos/build-test-package.sh
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: 编译并打包（不使用证书或内置密钥）
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p macos/build
+          bash macos/build-test-package.sh 2>&1 | tee macos/build/test-build.log
+
+      - name: 上传自用安装包
+        id: artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: Kitty-Tools-Test-${{ env.ARCH }}-${{ github.run_number }}
+          path: |
+            macos/build/test-package/*.dmg
+            macos/build/test-package/*.zip
+            macos/build/test-package/*.sha256
+            macos/build/test-package/README.md
+            macos/build/test-package/BUILD-INFO.txt
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: 写入下载入口
+        env:
+          ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+        run: |
+          printf '### 自用测试包\n\n[下载安装包](%s)\n\n安装说明见压缩包内 README.md。未创建 Release。\n' "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 保存构建日志
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: macOS-test-build-log-${{ env.ARCH }}-${{ github.run_number }}
+          path: macos/build/test-build.log
+          if-no-files-found: ignore
+          retention-days: 7
